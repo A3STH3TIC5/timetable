@@ -1,0 +1,1478 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>주간 시간표</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+:root{
+  --ink:#1B1B1F;
+  --ink-soft:#55555E;
+  --ink-faint:#9494A0;
+  --danger:#E5484D;
+  --danger-soft:rgba(229,72,77,0.12);
+  --glass-border:rgba(255,255,255,0.55);
+  --radius-lg:20px;
+  --radius-md:13px;
+  --radius-sm:9px;
+  --shadow-window:0 30px 70px -20px rgba(20,20,40,0.30), 0 8px 24px -8px rgba(20,20,40,0.16);
+  --shadow-dock:0 16px 40px -16px rgba(20,20,40,0.22);
+  /* theme-controlled */
+  --bg-a:#FDEFF3; --bg-b:#EFF3FD; --bg-c:#F3FBF6;
+  --accent:#FF8FAE; --accent-strong:#FF6F91; --accent-soft:#FFEAF0;
+}
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  margin:0;
+  font-family:'Pretendard','Noto Sans KR',-apple-system,sans-serif;
+  color:var(--ink);
+  -webkit-font-smoothing:antialiased;
+  min-height:100vh;
+}
+.desktop{
+  position:fixed; inset:0; z-index:0;
+  background:
+    radial-gradient(circle at 14% 18%, var(--accent) 0%, transparent 42%),
+    radial-gradient(circle at 86% 14%, var(--bg-a) 0%, transparent 45%),
+    radial-gradient(circle at 78% 86%, var(--bg-c) 0%, transparent 45%),
+    radial-gradient(circle at 18% 86%, var(--bg-b) 0%, transparent 42%),
+    linear-gradient(160deg, var(--bg-a) 0%, var(--bg-b) 50%, var(--bg-c) 100%);
+  filter:blur(60px) saturate(120%);
+  transform:scale(1.15);
+  transition:background .4s ease;
+}
+.shell{ position:relative; z-index:1; max-width:1080px; margin:0 auto; padding:34px 20px 90px; }
+#stickerLayer{ position:absolute; inset:0; pointer-events:none; z-index:20; }
+
+/* ---------- window ---------- */
+.window{
+  background:rgba(255,255,255,0.62);
+  backdrop-filter:blur(26px) saturate(180%);
+  -webkit-backdrop-filter:blur(26px) saturate(180%);
+  border:1px solid var(--glass-border);
+  border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-window);
+  overflow:hidden;
+}
+.section{ padding:16px 24px; border-top:1px solid rgba(0,0,0,0.055); }
+.section:first-child{ border-top:none; }
+
+/* titlebar */
+.win-titlebar{
+  display:flex; align-items:center; gap:12px; padding:14px 20px; cursor:grab;
+}
+.win-dots{ display:flex; gap:6px; }
+.win-dots span{ width:8px; height:8px; border-radius:50%; background:rgba(27,27,31,0.2); }
+.win-title{ font-size:14px; font-weight:700; color:var(--ink); margin-right:auto; letter-spacing:-0.01em; }
+.win-sub{ font-size:11.5px; color:var(--ink-faint); font-weight:600; }
+.readonly-badge{
+  font-size:11px; font-weight:700; padding:4px 11px; border-radius:999px;
+  background:var(--accent-soft); color:var(--accent-strong); margin-left:8px; white-space:nowrap;
+}
+.window.readonly .edit-only{ display:none !important; }
+.sticker.readonly{ pointer-events:none; cursor:default; }
+
+/* cover banner (now lives inside #capture-area so stickers can span it) */
+.cover{
+  position:relative; height:240px; overflow:visible;
+  background:rgba(255,255,255,0.5); background-size:cover; background-position:center;
+  display:flex; align-items:center; justify-content:center; cursor:pointer;
+  border-bottom:1.5px dashed rgba(0,0,0,0.14);
+}
+.cover.has-image{ cursor:default; border-bottom-style:solid; border-bottom-color:rgba(0,0,0,0.06); }
+.cover-empty{ display:flex; flex-direction:column; align-items:center; gap:7px; color:var(--ink-faint); }
+.cover-empty .plus{
+  width:32px; height:32px; border-radius:50%; background:#fff; border:1px solid rgba(0,0,0,0.08);
+  display:flex; align-items:center; justify-content:center; font-size:15px; color:var(--ink-soft);
+}
+.cover-empty span.label{ font-size:12px; font-weight:600; }
+.cover-actions{ position:absolute; top:10px; right:10px; display:none; gap:6px; z-index:8; }
+.cover.has-image:hover .cover-actions{ display:flex; }
+.cover-btn{
+  background:rgba(27,27,31,0.6); color:#fff; border:none; border-radius:999px; padding:6px 12px;
+  font-size:11.5px; cursor:pointer; font-family:inherit; font-weight:600; backdrop-filter:blur(3px);
+}
+.cover input{ display:none; }
+
+/* crop tool */
+.crop-stage{ position:relative; width:100%; max-height:360px; overflow:hidden; border-radius:12px; background:#111; user-select:none; }
+.crop-stage img{ display:block; width:100%; height:auto; user-select:none; pointer-events:none; }
+.crop-box{ position:absolute; border:2px solid #fff; box-shadow:0 0 0 999px rgba(0,0,0,0.5); cursor:move; }
+.crop-resize{ position:absolute; right:-7px; bottom:-7px; width:15px; height:15px; background:#fff; border:2px solid var(--accent-strong); border-radius:50%; cursor:nwse-resize; }
+
+/* color inputs: circular swatch fix */
+input[type=color]{ -webkit-appearance:none; appearance:none; border:none; padding:0; background:none; cursor:pointer; }
+input[type=color]::-webkit-color-swatch-wrapper{ padding:0; border-radius:50%; overflow:hidden; }
+input[type=color]::-webkit-color-swatch{ border:none; border-radius:50%; }
+input[type=color]::-moz-color-swatch{ border:none; border-radius:50%; }
+
+/* toolbar */
+.win-toolbar{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.btn{
+  font-family:inherit; font-weight:600; font-size:12.5px;
+  border:1px solid rgba(0,0,0,0.08); border-radius:999px; padding:8px 14px;
+  cursor:pointer; color:var(--ink-soft); background:rgba(255,255,255,0.7);
+  transition:background .15s ease, color .15s ease, transform .08s ease;
+  display:inline-flex; align-items:center; gap:6px;
+}
+.btn:hover{ background:#fff; color:var(--ink); }
+.btn.primary{ background:var(--ink); border-color:var(--ink); color:#fff; }
+.btn.primary:hover{ background:#000; }
+.btn.ghost{ background:transparent; border-color:transparent; }
+.btn.ghost:hover{ background:rgba(0,0,0,0.05); }
+.btn.icon{ padding:8px 10px; }
+.btn.small{ padding:6px 11px; font-size:11.5px; }
+.spacer{ flex:1; }
+.file-btn input{ display:none; }
+.code-input{
+  border:1px solid rgba(0,0,0,0.08); border-radius:999px; padding:8px 12px; font-family:inherit;
+  font-weight:600; width:100px; font-size:12px; letter-spacing:1px; text-transform:uppercase;
+  color:var(--ink); background:rgba(255,255,255,0.7);
+}
+.code-input:focus{ outline:none; border-color:var(--accent); background:#fff; }
+.divider-v{ width:1px; align-self:stretch; background:rgba(0,0,0,0.08); margin:0 2px; }
+
+/* legend */
+.legend{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+.legend-title{ font-size:11.5px; color:var(--ink-faint); font-weight:700; margin-right:2px; text-transform:uppercase; letter-spacing:.04em; }
+.chip{
+  display:flex; align-items:center; gap:7px; border-radius:999px; padding:6px 12px;
+  font-size:12px; font-weight:700; cursor:pointer; user-select:none;
+  background:rgba(255,255,255,0.6); border:1px solid rgba(0,0,0,0.06); color:var(--ink);
+  transition:opacity .15s;
+}
+.chip.off{ opacity:.35; }
+.chip .dot{ width:9px; height:9px; border-radius:50%; box-shadow:0 0 0 2px #fff; }
+
+/* ---------- board ---------- */
+.board-wrap{ padding:16px 24px 20px; }
+.board-flex{ display:flex; align-items:flex-start; }
+.page-index{ display:flex; flex-direction:column; gap:10px; padding-top:26px; margin-left:2px; }
+.page-tab{
+  position:relative; writing-mode:vertical-rl; text-orientation:mixed; letter-spacing:.03em;
+  padding:13px 7px; border-radius:0 12px 12px 0; font-size:11px; font-weight:800; cursor:pointer;
+  box-shadow:2px 3px 8px rgba(20,20,30,0.16); color:#fff; user-select:none;
+  margin-left:-9px; transition:margin-left .15s ease, box-shadow .15s ease;
+}
+.page-tab:hover{ margin-left:-3px; }
+.page-tab.active{ margin-left:0; box-shadow:3px 5px 14px rgba(20,20,30,0.24); }
+.page-tab.me-tab{ background:var(--ink); }
+.page-tab .tab-remove{
+  position:absolute; top:-6px; right:-6px; width:16px; height:16px; border-radius:50%;
+  background:#fff; color:var(--danger); font-size:9px; display:none; align-items:center; justify-content:center;
+  box-shadow:0 1px 3px rgba(0,0,0,0.25); writing-mode:horizontal-tb; cursor:pointer;
+}
+.page-tab:hover .tab-remove{ display:flex; }
+@media (max-width:720px){
+  .page-tab{ font-size:10px; padding:10px 5px; }
+}
+#capture-area{
+  position:relative; width:966px; max-width:100%;
+  background:#fffefd; border-radius:var(--radius-md); border:1px solid rgba(0,0,0,0.07);
+  overflow:hidden;
+}
+#capture-area::before{
+  content:""; position:absolute; inset:0; pointer-events:none; z-index:7; opacity:.05; mix-blend-mode:multiply;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  background-size:150px 150px;
+}
+.grid-head{ display:grid; grid-template-columns:54px repeat(7,128.5px); position:sticky; top:0; }
+.head-cell{
+  text-align:center; padding:11px 0; font-size:12.5px; font-weight:700;
+  background:#fff; border-bottom:1px solid rgba(0,0,0,0.07); border-right:1px solid rgba(0,0,0,0.05);
+  color:var(--ink-faint);
+}
+.head-cell.corner{ border-right:1px solid rgba(0,0,0,0.05); }
+.head-cell.today{ background:var(--accent-soft); color:var(--accent-strong); }
+.grid-body{ position:relative; display:grid; grid-template-columns:54px repeat(7,128.5px); }
+.time-col{ display:flex; flex-direction:column; }
+.time-label{
+  height:46px; font-size:10px; color:var(--ink-faint); text-align:right; padding-right:6px;
+  border-right:1px solid rgba(0,0,0,0.05); box-sizing:border-box; padding-top:2px; font-weight:600;
+}
+.day-col{ border-right:1px solid rgba(0,0,0,0.05); position:relative; }
+.day-col.today-col{ background:rgba(0,0,0,0.015); }
+.hour-cell{ height:46px; box-sizing:border-box; border-bottom:1px solid rgba(0,0,0,0.045); cursor:pointer; }
+.hour-cell:hover{ background:var(--accent-soft); }
+
+#overlay{ position:absolute; top:0; left:0; right:0; bottom:0; pointer-events:none; z-index:6; }
+.entry{
+  position:absolute; border-radius:9px; padding:5px 8px; font-size:11px; font-weight:700;
+  color:var(--ink); overflow:hidden; cursor:pointer; pointer-events:auto;
+  box-shadow:0 3px 8px -4px rgba(20,20,30,0.22); line-height:1.35;
+}
+.entry .t{ font-size:9px; opacity:.6; display:block; font-weight:600; }
+.entry.now{ outline:2px solid var(--danger); }
+
+.nowline{ position:absolute; height:2px; background:var(--danger); pointer-events:none; z-index:5; border-radius:2px; }
+.nowline .dotmark{ position:absolute; left:-4px; top:-3px; width:8px; height:8px; border-radius:50%; background:var(--danger); box-shadow:0 0 0 3px rgba(229,72,77,0.22); }
+.nowline .cap{ position:absolute; right:0; top:-9px; font-size:9px; background:var(--danger); color:#fff; padding:1px 6px; border-radius:8px; font-weight:700; }
+
+/* stickers — MemoCard-style hover handles */
+.sticker{ position:absolute; pointer-events:auto; cursor:grab; touch-action:none; z-index:3; }
+.sticker img{ width:100%; height:100%; display:block; object-fit:contain; filter:drop-shadow(0 3px 5px rgba(0,0,0,0.18)); pointer-events:none; }
+.sticker:active{ cursor:grabbing; }
+.sticker .remove{
+  position:absolute; top:-8px; right:-8px; width:17px; height:17px; border-radius:50%;
+  background:var(--danger); color:#fff; font-size:9.5px; font-weight:700;
+  display:flex; align-items:center; justify-content:center; opacity:0; transition:opacity .15s ease; z-index:2; cursor:pointer;
+}
+.sticker:hover .remove{ opacity:1; }
+.sticker .resize-handle{
+  position:absolute; bottom:-7px; right:-7px; width:16px; height:16px; border-radius:50%;
+  background:#fff; border:2px solid var(--accent-strong); cursor:nwse-resize; opacity:0; transition:opacity .15s ease; z-index:2;
+}
+.sticker:hover .resize-handle{ opacity:1; }
+.sticker .rotate-handle{
+  position:absolute; top:-20px; left:50%; transform:translateX(-50%); width:16px; height:16px; border-radius:50%;
+  background:#fff; border:2px solid var(--accent-strong); color:var(--accent-strong); font-size:9px;
+  display:flex; align-items:center; justify-content:center; cursor:grab; opacity:0; transition:opacity .15s ease; z-index:2;
+}
+.sticker:hover .rotate-handle{ opacity:1; }
+
+.note{ text-align:center; color:var(--ink-faint); font-size:12px; padding:14px 24px 18px; }
+
+/* ---------- modal ---------- */
+.overlay-bg{
+  position:fixed; inset:0; background:rgba(20,20,30,0.42); backdrop-filter:blur(2px); display:none;
+  align-items:center; justify-content:center; z-index:50; padding:16px;
+}
+.overlay-bg.show{ display:flex; }
+.modal{
+  background:#fff; border-radius:var(--radius-lg); padding:22px 24px; width:100%; max-width:390px;
+  box-shadow:0 30px 70px rgba(0,0,0,0.32); position:relative;
+}
+.modal h3{ font-size:15.5px; margin:0 0 14px; font-weight:700; }
+.field{ margin-bottom:12px; }
+.field label{ display:block; font-size:11.5px; font-weight:700; color:var(--ink-faint); margin-bottom:5px; text-transform:uppercase; letter-spacing:.03em; }
+.field input[type=text], .field input[type=time]{
+  width:100%; padding:9px 11px; border:1px solid rgba(0,0,0,0.09); border-radius:10px; font-family:inherit; font-size:13.5px;
+  background:#FAFAFB;
+}
+.field input:focus{ outline:none; border-color:var(--accent); background:#fff; }
+.row2{ display:flex; gap:10px; }
+.row2 .field{ flex:1; }
+.cat-pick{ display:flex; gap:6px; flex-wrap:wrap; }
+.cat-pick .opt{
+  padding:6px 12px; border-radius:999px; font-size:12px; font-weight:700; cursor:pointer; border:1px solid rgba(0,0,0,0.08);
+  color:var(--ink-soft);
+}
+.cat-pick .opt.sel{ border-color:var(--ink); background:rgba(0,0,0,0.05); color:var(--ink); }
+.modal-actions{ display:flex; gap:8px; margin-top:16px; justify-content:flex-end; }
+.close-x{ position:absolute; top:16px; right:18px; cursor:pointer; font-size:15px; color:var(--ink-faint); background:none; border:none; }
+.cat-list-item{ display:flex; align-items:center; gap:9px; padding:7px 0; border-bottom:1px solid rgba(0,0,0,0.055); }
+.color-trigger{
+  width:26px; height:26px; border-radius:50%; border:2px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,0.1);
+  padding:0; cursor:pointer; flex-shrink:0;
+}
+.cat-list-item input[type=text]{ flex:1; border:1px solid rgba(0,0,0,0.09); border-radius:9px; padding:6px 9px; font-size:13px; font-family:inherit; }
+.stk-btn{
+  background:#F5F5F7; border:1px solid rgba(0,0,0,0.07); border-radius:8px; width:23px; height:23px;
+  font-size:11px; cursor:pointer; display:flex; align-items:center; justify-content:center; color:var(--ink-soft); flex-shrink:0;
+}
+.stk-btn:hover{ background:var(--danger-soft); color:var(--danger); }
+.share-code{
+  font-size:25px; text-align:center; letter-spacing:6px; background:#FAFAFB;
+  border:1px solid rgba(0,0,0,0.08); border-radius:14px; padding:14px; margin:10px 0; color:var(--ink); font-weight:800;
+}
+.hint{ font-size:11.5px; color:var(--ink-faint); margin-top:6px; line-height:1.5; }
+.toast{
+  position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+  background:rgba(27,27,31,0.92); backdrop-filter:blur(10px); color:#fff; padding:10px 18px; border-radius:999px;
+  font-size:12.5px; font-weight:600; z-index:100; opacity:0; transition:opacity .25s, transform .25s; pointer-events:none;
+}
+.toast.show{ opacity:1; transform:translateX(-50%) translateY(-6px); }
+
+/* theme picker */
+.theme-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:6px; }
+.theme-swatch{
+  border:2px solid rgba(0,0,0,0.08); border-radius:14px; padding:10px 8px; cursor:pointer; text-align:center;
+  display:flex; flex-direction:column; align-items:center; gap:6px;
+}
+.theme-swatch.active{ border-color:var(--ink); }
+.swatch-dots{ display:flex; gap:3px; }
+.swatch-dots span{ width:14px; height:14px; border-radius:50%; display:block; }
+.theme-swatch .name{ font-size:11.5px; font-weight:700; color:var(--ink); }
+.theme-swatch.custom-swatch{ cursor:pointer; }
+
+/* duo-tone gradient picker */
+.duo-panel{
+  margin-top:10px; border:2px solid rgba(0,0,0,0.08); border-radius:14px; padding:12px;
+  transition:border-color .15s ease;
+}
+.duo-panel.active{ border-color:var(--ink); }
+.duo-preview{ height:32px; border-radius:9px; margin-bottom:10px; border:1px solid rgba(0,0,0,0.08); }
+.duo-inputs{ display:flex; align-items:center; justify-content:center; gap:16px; }
+.duo-input-wrap{ display:flex; flex-direction:column; align-items:center; gap:5px; font-size:11px; font-weight:700; color:var(--ink-soft); cursor:pointer; }
+.duo-plus{ color:var(--ink-faint); font-weight:700; font-size:13px; }
+
+/* preset sticker grid */
+.preset-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+.preset-item{
+  border:1px solid rgba(0,0,0,0.08); border-radius:12px; padding:10px 6px 8px; cursor:pointer;
+  display:flex; flex-direction:column; align-items:center; gap:6px; background:#FAFAFB;
+}
+.preset-item:hover{ background:#fff; border-color:rgba(0,0,0,0.15); }
+.preset-item img{ width:56px; height:26px; object-fit:contain; }
+.preset-item span{ font-size:10.5px; font-weight:600; color:var(--ink-soft); }
+
+/* export options */
+.check-row{
+  display:flex; align-items:center; gap:9px; padding:9px 0; font-size:13px; font-weight:600; color:var(--ink);
+  border-bottom:1px solid rgba(0,0,0,0.055);
+}
+.check-row:last-of-type{ border-bottom:none; }
+.check-row input[type=checkbox]{ width:16px; height:16px; accent-color:var(--ink); cursor:pointer; }
+.check-row .muted{ color:var(--ink-faint); font-weight:500; font-size:11.5px; margin-left:auto; }
+
+@media (max-width:720px){
+  .grid-head, .grid-body{ grid-template-columns:44px repeat(7, 100px); }
+  .time-label, .hour-cell{ height:40px; }
+}
+</style>
+</head>
+<body>
+<div class="desktop"></div>
+
+<div class="shell">
+  <div class="window" id="windowEl">
+
+    <div class="win-titlebar section" style="border-top:none;">
+      <div class="win-dots"><span></span><span></span><span></span></div>
+      <span class="win-title">주간 시간표</span>
+      <span class="win-sub" id="todayTag"></span>
+      <span class="readonly-badge" id="readonlyBadge" style="display:none;"></span>
+    </div>
+
+    <div class="win-toolbar section">
+      <button class="btn primary edit-only" id="btnAddEntry">＋ 일정 추가</button>
+      <button class="btn edit-only" id="btnCategory">카테고리 관리</button>
+      <label class="btn file-btn edit-only">스티커 업로드<input type="file" id="stickerInput" accept="image/*" multiple></label>
+      <button class="btn edit-only" id="btnPresetSticker">기본 스티커</button>
+      <div class="spacer"></div>
+      <button class="btn edit-only" id="btnShare">공유하기</button>
+      <input class="code-input" id="loadCode" placeholder="공유코드" maxlength="8">
+      <button class="btn" id="btnLoadCode">불러오기</button>
+      <div class="divider-v"></div>
+      <button class="btn" id="btnExportOrig">원본 저장</button>
+      <button class="btn" id="btnExportWall">배경화면 저장</button>
+      <button class="btn icon" id="btnTheme" title="테마 설정">🎨</button>
+      <button class="btn ghost small edit-only" id="btnReset" title="초기화">초기화</button>
+    </div>
+
+    <div class="legend section" id="legend"></div>
+
+    <div class="board-wrap section">
+      <div class="board-flex">
+        <div id="capture-area">
+          <div class="cover" id="cover">
+            <div class="cover-empty" id="coverEmpty">
+              <div class="plus">＋</div>
+              <span class="label">표지 이미지 추가</span>
+            </div>
+            <div class="cover-actions edit-only" id="coverActions">
+              <button class="cover-btn" id="btnCoverChange">변경</button>
+              <button class="cover-btn" id="btnCoverRemove">삭제</button>
+            </div>
+            <input type="file" id="coverInput" accept="image/*">
+          </div>
+          <div class="grid-head" id="gridHead"></div>
+          <div class="grid-body" id="gridBody">
+            <div class="time-col" id="timeCol"></div>
+            <!-- 7 day cols injected -->
+          </div>
+          <div id="overlay"></div>
+        </div>
+        <div class="page-index" id="pageIndex"></div>
+      </div>
+    </div>
+
+    <div class="note">빈칸을 클릭해 일정을 추가하고, 스티커는 화면 어디에든 끌어서 배치·회전·크기 조절할 수 있어요. 변경 사항은 자동으로 저장됩니다. 오른쪽 인덱스에서 친구의 시간표도 구경할 수 있어요.</div>
+  </div>
+  <div id="stickerLayer"></div>
+</div>
+
+<!-- Cover Crop Modal -->
+<div class="overlay-bg" id="cropModalBg">
+  <div class="modal" style="max-width:480px;">
+    <button class="close-x" data-close="cropModalBg">✕</button>
+    <h3>표지 영역 선택</h3>
+    <div class="hint" style="margin-top:-8px; margin-bottom:10px;">배너에 사용할 영역을 끌어서 옮기고, 모서리로 크기를 조절하세요.</div>
+    <div class="crop-stage" id="cropStage">
+      <img id="cropImg" draggable="false">
+      <div class="crop-box" id="cropBox">
+        <div class="crop-resize" id="cropResize"></div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn small" data-close="cropModalBg">취소</button>
+      <button class="btn small primary" id="btnApplyCrop">적용</button>
+    </div>
+  </div>
+</div>
+
+<!-- Entry Modal -->
+<div class="overlay-bg" id="entryModalBg">
+  <div class="modal">
+    <button class="close-x" data-close="entryModalBg">✕</button>
+    <h3 id="entryModalTitle">일정 추가</h3>
+    <div class="field">
+      <label>제목</label>
+      <input type="text" id="fTitle" placeholder="예: 전공수업, 알바, 약속">
+    </div>
+    <div class="field">
+      <label>요일</label>
+      <div class="cat-pick" id="dayPick"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>시작</label><input type="time" id="fStart" value="09:00"></div>
+      <div class="field"><label>종료</label><input type="time" id="fEnd" value="10:00"></div>
+    </div>
+    <div class="field">
+      <label>카테고리</label>
+      <div class="cat-pick" id="catPick"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn small ghost" id="btnDeleteEntry" style="display:none;">삭제</button>
+      <button class="btn small" data-close="entryModalBg">취소</button>
+      <button class="btn small primary" id="btnSaveEntry">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- Category Modal -->
+<div class="overlay-bg" id="catModalBg">
+  <div class="modal">
+    <button class="close-x" data-close="catModalBg">✕</button>
+    <h3>카테고리 관리</h3>
+    <div id="catListWrap"></div>
+    <div class="modal-actions" style="justify-content:space-between;">
+      <button class="btn small" id="btnAddCat">＋ 카테고리 추가</button>
+      <button class="btn small primary" data-close="catModalBg">완료</button>
+    </div>
+  </div>
+</div>
+
+<!-- Share Modal -->
+<div class="overlay-bg" id="shareModalBg">
+  <div class="modal">
+    <button class="close-x" data-close="shareModalBg">✕</button>
+    <h3>친구와 공유하기</h3>
+    <div class="hint">아래 코드를 친구에게 보내주세요. 친구가 코드를 입력하면 지금 시간표를 그대로 볼 수 있어요.</div>
+    <div class="share-code" id="shareCodeDisplay">------</div>
+    <div class="modal-actions" style="justify-content:center;">
+      <button class="btn small" id="btnCopyCode">코드 복사</button>
+      <button class="btn small" data-close="shareModalBg">닫기</button>
+    </div>
+  </div>
+</div>
+
+<!-- Theme Modal -->
+<div class="overlay-bg" id="themeModalBg">
+  <div class="modal">
+    <button class="close-x" data-close="themeModalBg">✕</button>
+    <h3>테마 설정</h3>
+    <div class="theme-grid" id="themeGrid"></div>
+    <div class="duo-panel" id="duoPanel">
+      <div class="duo-preview" id="duoPreview"></div>
+      <div class="duo-inputs">
+        <label class="duo-input-wrap">
+          <input type="color" id="duoColor1" class="color-trigger">
+          <span>색상 1</span>
+        </label>
+        <span class="duo-plus">+</span>
+        <label class="duo-input-wrap">
+          <input type="color" id="duoColor2" class="color-trigger">
+          <span>색상 2</span>
+        </label>
+      </div>
+    </div>
+    <div class="hint">색상 1·2를 골라 나만의 투톤 그라데이션 배경을 만들 수 있어요. (예: 노랑 + 파랑) 선택한 테마는 이 브라우저에 저장돼요.</div>
+    <div class="modal-actions" style="justify-content:flex-end;">
+      <button class="btn small primary" data-close="themeModalBg">완료</button>
+    </div>
+  </div>
+</div>
+
+<!-- Preset Sticker Modal -->
+<div class="overlay-bg" id="presetModalBg">
+  <div class="modal">
+    <button class="close-x" data-close="presetModalBg">✕</button>
+    <h3>기본 스티커</h3>
+    <div class="hint" style="margin-top:-8px; margin-bottom:12px;">눌러서 바로 시간표에 붙여보세요. 마스킹테이프 스티커예요.</div>
+    <div class="preset-grid" id="presetGrid"></div>
+  </div>
+</div>
+
+<!-- Export Options Modal -->
+<div class="overlay-bg" id="exportModalBg">
+  <div class="modal">
+    <button class="close-x" data-close="exportModalBg">✕</button>
+    <h3>배경화면으로 저장</h3>
+    <div class="check-row">
+      <input type="checkbox" id="optIncludeCover" checked>
+      <span>상단 배너 포함</span>
+      <span class="muted" id="coverMuted"></span>
+    </div>
+    <div class="check-row">
+      <input type="checkbox" id="optIncludeStickers" checked>
+      <span>스티커 포함</span>
+    </div>
+    <div class="modal-actions">
+      <button class="btn small" data-close="exportModalBg">취소</button>
+      <button class="btn small primary" id="btnConfirmExportWall">저장하기</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============ THEMES ============ */
+const THEMES = {
+  pink:      {name:'핑크',   bgA:'#FDEFF3', bgB:'#EFF3FD', bgC:'#F3FBF6', accent:'#FF8FAE', accentStrong:'#FF6F91', accentSoft:'#FFEAF0'},
+  lavender:  {name:'라벤더', bgA:'#F1EAFB', bgB:'#EAF0FB', bgC:'#FBEAF3', accent:'#C3AEF0', accentStrong:'#A98BE8', accentSoft:'#F2ECFC'},
+  mint:      {name:'민트',   bgA:'#E7F9F1', bgB:'#EAF4FB', bgC:'#F7FBEA', accent:'#8FDCBC', accentStrong:'#5FC79E', accentSoft:'#E7F9F1'},
+  sky:       {name:'스카이', bgA:'#E8F4FD', bgB:'#F0EEFB', bgC:'#EAF9F6', accent:'#8FCBF0', accentStrong:'#5FAEE0', accentSoft:'#E9F5FD'},
+  peach:     {name:'피치',   bgA:'#FDEFE3', bgB:'#FDF3EA', bgC:'#FBEAEE', accent:'#F6BE8E', accentStrong:'#EF9F60', accentSoft:'#FEF2E6'},
+  mono:      {name:'모노',   bgA:'#F0F0F2', bgB:'#EDEDF0', bgC:'#F3F3F5', accent:'#9CA0AC', accentStrong:'#7A7E8A', accentSoft:'#F1F1F3'},
+};
+let currentTheme = 'pink';
+let duoHex1 = '#F6D860';
+let duoHex2 = '#7EC8E3';
+
+/* ---- color utils for custom theme generation ---- */
+function hexToRgb(hex){
+  hex = hex.replace('#','');
+  if(hex.length===3) hex = hex.split('').map(c=>c+c).join('');
+  const num = parseInt(hex,16);
+  return [(num>>16)&255, (num>>8)&255, num&255];
+}
+function rgbToHex(rgb){
+  return '#'+rgb.map(v=>Math.round(Math.max(0,Math.min(255,v))).toString(16).padStart(2,'0')).join('');
+}
+function lighten(hex, amt){
+  const [r,g,b] = hexToRgb(hex);
+  return rgbToHex([r+(255-r)*amt, g+(255-g)*amt, b+(255-b)*amt]);
+}
+function darken(hex, amt){
+  const [r,g,b] = hexToRgb(hex);
+  return rgbToHex([r*(1-amt), g*(1-amt), b*(1-amt)]);
+}
+function mixHex(hexA, hexB, t){
+  const [r1,g1,b1] = hexToRgb(hexA);
+  const [r2,g2,b2] = hexToRgb(hexB);
+  return rgbToHex([r1+(r2-r1)*t, g1+(g2-g1)*t, b1+(b2-b1)*t]);
+}
+function buildCustomTheme(hex1, hex2){
+  const mid = mixHex(hex1, hex2, 0.5);
+  return {
+    name:'듀오톤',
+    bgA: lighten(hex1, 0.84),
+    bgB: lighten(mid, 0.88),
+    bgC: lighten(hex2, 0.84),
+    accent: mid,
+    accentStrong: darken(mid, 0.16),
+    accentSoft: lighten(mid, 0.85),
+  };
+}
+
+function applyThemeVars(t){
+  const r = document.documentElement.style;
+  r.setProperty('--bg-a', t.bgA); r.setProperty('--bg-b', t.bgB); r.setProperty('--bg-c', t.bgC);
+  r.setProperty('--accent', t.accent); r.setProperty('--accent-strong', t.accentStrong);
+  r.setProperty('--accent-soft', t.accentSoft);
+}
+function applyTheme(key, skipSave){
+  const t = THEMES[key]; if(!t) return;
+  currentTheme = key;
+  applyThemeVars(t);
+  renderThemeGrid();
+  if(!skipSave) saveTheme();
+}
+function renderThemeGrid(){
+  const el = document.getElementById('themeGrid');
+  if(!el) return;
+  let html = Object.keys(THEMES).filter(k=>k!=='custom').map(key=>{
+    const t = THEMES[key];
+    const active = key === currentTheme ? 'active' : '';
+    return `<div class="theme-swatch ${active}" data-theme="${key}">
+      <div class="swatch-dots">
+        <span style="background:${t.accent}"></span><span style="background:${t.accentStrong}"></span><span style="background:${t.bgB}"></span>
+      </div>
+      <span class="name">${t.name}</span>
+    </div>`;
+  }).join('');
+  el.innerHTML = html;
+  Array.from(el.querySelectorAll('.theme-swatch[data-theme]')).forEach(sw=>{
+    sw.addEventListener('click', ()=>applyTheme(sw.dataset.theme));
+  });
+  updateDuoUI();
+}
+
+/* duo-tone gradient picker: color inputs live OUTSIDE #themeGrid so rebuilding
+   the preset tiles above never destroys the picker mid-drag. */
+function updateDuoUI(){
+  const c1 = $('#duoColor1'), c2 = $('#duoColor2'), preview = $('#duoPreview'), panel = $('#duoPanel');
+  if(!c1) return;
+  c1.value = duoHex1; c2.value = duoHex2;
+  preview.style.background = `linear-gradient(90deg, ${duoHex1}, ${duoHex2})`;
+  panel.classList.toggle('active', currentTheme === 'custom');
+}
+function liveDuoPreview(){
+  THEMES.custom = buildCustomTheme(duoHex1, duoHex2);
+  currentTheme = 'custom';
+  applyThemeVars(THEMES.custom);
+  $('#duoPreview').style.background = `linear-gradient(90deg, ${duoHex1}, ${duoHex2})`;
+  $('#duoPanel').classList.add('active');
+  $$('#themeGrid .theme-swatch[data-theme]').forEach(sw=>sw.classList.remove('active'));
+}
+function initDuoPicker(){
+  $('#duoColor1').addEventListener('input', (e)=>{ duoHex1 = e.target.value; liveDuoPreview(); });
+  $('#duoColor2').addEventListener('input', (e)=>{ duoHex2 = e.target.value; liveDuoPreview(); });
+  $('#duoColor1').addEventListener('change', ()=>{ saveTheme(); saveDuoHex(); });
+  $('#duoColor2').addEventListener('change', ()=>{ saveTheme(); saveDuoHex(); });
+}
+async function saveTheme(){
+  try{ await window.storage.set('dakku_theme_v2', currentTheme, false); }catch(e){}
+}
+async function saveDuoHex(){
+  try{
+    await window.storage.set('dakku_theme_duo1', duoHex1, false);
+    await window.storage.set('dakku_theme_duo2', duoHex2, false);
+  }catch(e){}
+}
+async function loadTheme(){
+  try{
+    const h1 = await window.storage.get('dakku_theme_duo1', false);
+    if(h1 && h1.value) duoHex1 = h1.value;
+    const h2 = await window.storage.get('dakku_theme_duo2', false);
+    if(h2 && h2.value) duoHex2 = h2.value;
+  }catch(e){}
+  THEMES.custom = buildCustomTheme(duoHex1, duoHex2);
+  try{
+    const res = await window.storage.get('dakku_theme_v2', false);
+    if(res && res.value && THEMES[res.value]) currentTheme = res.value;
+  }catch(e){}
+  initDuoPicker();
+  applyTheme(currentTheme, true);
+}
+document.getElementById('btnTheme').addEventListener('click', ()=>{ renderThemeGrid(); showModal('themeModalBg'); });
+
+/* ============ CONFIG ============ */
+const DAYS = ['월','화','수','목','금','토','일'];
+const HOUR_START = 0, HOUR_END = 24;
+const HOUR_H = 46, DAY_W = 128.5, TIME_W = 54;
+const CAPTURE_W = 966, COVER_H_CSS = 240;
+const CAT_PALETTE = ['#FFD3DE','#D3E6FB','#FFE9C2','#D3F5E4','#E6D9FB','#D3F0FB'];
+const CAT_DOT = {'#FFD3DE':'#FF8FAE','#D3E6FB':'#5FAEE0','#FFE9C2':'#EFA83D','#D3F5E4':'#4FC793','#E6D9FB':'#A98BE8','#D3F0FB':'#4FB8D6'};
+
+/* ============ STATE ============ */
+let state = {
+  cover: null,
+  categories: [
+    {id:'c1', name:'수업', color:'#FFD3DE'},
+    {id:'c2', name:'알바', color:'#D3E6FB'},
+    {id:'c3', name:'약속', color:'#FFE9C2'},
+    {id:'c4', name:'운동', color:'#D3F5E4'},
+    {id:'c5', name:'휴식', color:'#E6D9FB'},
+  ],
+  entries: [],
+  stickers: [],
+};
+let hiddenCats = new Set();
+let editingEntryId = null;
+let saveTimer = null;
+let COVER_PX = COVER_H_CSS, HEAD_PX = 40;
+
+/* ---- multi-page (share-code index) state ----
+   `state` always points at whichever timetable is currently displayed.
+   `myState` is the canonical reference to the user's OWN editable data —
+   saves always target myState specifically so viewing a friend's read-only
+   page can never overwrite local storage with their data. */
+let myState = null;
+let friendPages = []; // [{code, color}]
+let isReadOnly = false;
+let currentPageId = 'me';
+
+/* ============ UTIL ============ */
+const $ = sel => document.querySelector(sel);
+const $$ = sel => Array.from(document.querySelectorAll(sel));
+const uid = () => Math.random().toString(36).slice(2,9);
+function toast(msg){
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._timer); t._timer = setTimeout(()=>t.classList.remove('show'), 2200);
+}
+function timeToMin(t){ const [h,m] = t.split(':').map(Number); return h*60+m; }
+function todayIdx(){ const d = new Date().getDay(); return (d+6)%7; }
+function nowMin(){ const d = new Date(); return d.getHours()*60 + d.getMinutes(); }
+function dotColor(hex){ return CAT_DOT[hex] || hex; }
+function measureLayout(){
+  COVER_PX = $('#cover').offsetHeight || COVER_H_CSS;
+  HEAD_PX = $('#gridHead').offsetHeight || 40;
+}
+
+/* ============ STORAGE ============ */
+async function saveLocal(){
+  try{ await window.storage.set('dakku_timetable_v4', JSON.stringify(myState), false); }
+  catch(e){ console.error('save failed', e); }
+}
+function queueSave(){ if(isReadOnly) return; clearTimeout(saveTimer); saveTimer = setTimeout(saveLocal, 500); }
+async function loadLocal(){
+  try{
+    const res = await window.storage.get('dakku_timetable_v4', false);
+    if(res && res.value){
+      const parsed = JSON.parse(res.value);
+      if(parsed && parsed.categories && parsed.entries) state = Object.assign({cover:null}, parsed);
+    }
+  }catch(e){ /* nothing saved yet */ }
+}
+
+/* ============ COVER IMAGE ============ */
+function renderCover(){
+  const cover = $('#cover');
+  if(state.cover){
+    cover.classList.add('has-image');
+    cover.style.backgroundImage = `url(${state.cover})`;
+    $('#coverEmpty').style.display = 'none';
+  } else {
+    cover.classList.remove('has-image');
+    cover.style.backgroundImage = 'none';
+    $('#coverEmpty').style.display = 'flex';
+  }
+  const dayNames = ['일','월','화','수','목','금','토'];
+  const d = new Date();
+  $('#todayTag').textContent = `${d.getMonth()+1}월 ${d.getDate()}일 ${dayNames[d.getDay()]}요일`;
+}
+$('#cover').addEventListener('click', (e)=>{
+  if(isReadOnly) return;
+  if(e.target.closest('.sticker')) return;
+  if(!state.cover) $('#coverInput').click();
+});
+$('#btnCoverChange').addEventListener('click', (e)=>{ e.stopPropagation(); $('#coverInput').click(); });
+$('#btnCoverRemove').addEventListener('click', (e)=>{
+  e.stopPropagation(); state.cover = null; renderCover(); queueSave(); toast('표지를 삭제했어요');
+});
+$('#coverInput').addEventListener('change', (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{ openCropModal(reader.result); };
+  reader.readAsDataURL(file);
+  e.target.value = '';
+});
+
+/* ============ COVER CROP TOOL ============ */
+let cropState = { ratio: CAPTURE_W/COVER_H_CSS, naturalW:0, naturalH:0, displayW:0, displayH:0, box:{x:0,y:0,w:0,h:0} };
+
+function openCropModal(dataUrl){
+  const img = $('#cropImg');
+  img.onload = ()=>{
+    cropState.naturalW = img.naturalWidth;
+    cropState.naturalH = img.naturalHeight;
+    // show the modal FIRST so the image actually has layout — measuring
+    // clientWidth/clientHeight while display:none always returns 0.
+    showModal('cropModalBg');
+    requestAnimationFrame(()=>{
+      cropState.displayW = img.clientWidth;
+      cropState.displayH = img.clientHeight;
+      initCropBox();
+    });
+  };
+  img.src = dataUrl;
+}
+function initCropBox(){
+  const ratio = cropState.ratio;
+  let w = cropState.displayW;
+  let h = w/ratio;
+  if(h > cropState.displayH){ h = cropState.displayH; w = h*ratio; }
+  cropState.box = { w, h, x:(cropState.displayW-w)/2, y:(cropState.displayH-h)/2 };
+  updateCropBoxEl();
+}
+function updateCropBoxEl(){
+  const el = $('#cropBox');
+  el.style.left = cropState.box.x+'px';
+  el.style.top = cropState.box.y+'px';
+  el.style.width = cropState.box.w+'px';
+  el.style.height = cropState.box.h+'px';
+}
+$('#cropBox').addEventListener('mousedown', (e)=>{
+  if(e.target.id === 'cropResize') return;
+  e.preventDefault();
+  const startX = e.clientX, startY = e.clientY;
+  const orig = Object.assign({}, cropState.box);
+  function move(ev){
+    let nx = orig.x + (ev.clientX-startX);
+    let ny = orig.y + (ev.clientY-startY);
+    nx = Math.max(0, Math.min(nx, cropState.displayW - cropState.box.w));
+    ny = Math.max(0, Math.min(ny, cropState.displayH - cropState.box.h));
+    cropState.box.x = nx; cropState.box.y = ny;
+    updateCropBoxEl();
+  }
+  function up(){ document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); }
+  document.addEventListener('mousemove', move);
+  document.addEventListener('mouseup', up);
+});
+$('#cropResize').addEventListener('mousedown', (e)=>{
+  e.preventDefault(); e.stopPropagation();
+  const startX = e.clientX;
+  const orig = Object.assign({}, cropState.box);
+  function move(ev){
+    let nw = Math.max(60, orig.w + (ev.clientX-startX));
+    nw = Math.min(nw, cropState.displayW - orig.x, (cropState.displayH-orig.y)*cropState.ratio);
+    const nh = nw/cropState.ratio;
+    cropState.box.w = nw; cropState.box.h = nh;
+    updateCropBoxEl();
+  }
+  function up(){ document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); }
+  document.addEventListener('mousemove', move);
+  document.addEventListener('mouseup', up);
+});
+$('#btnApplyCrop').addEventListener('click', ()=>{
+  const img = $('#cropImg');
+  const scaleX = cropState.naturalW/cropState.displayW;
+  const scaleY = cropState.naturalH/cropState.displayH;
+  const sx = cropState.box.x*scaleX, sy = cropState.box.y*scaleY;
+  const sw = cropState.box.w*scaleX, sh = cropState.box.h*scaleY;
+  const outW = 1200, outH = Math.round(1200/cropState.ratio);
+  const canvas = document.createElement('canvas');
+  canvas.width = outW; canvas.height = outH;
+  canvas.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, outW, outH);
+  state.cover = canvas.toDataURL('image/jpeg', 0.92);
+  renderCover(); queueSave(); hideModal('cropModalBg');
+  toast('표지를 적용했어요');
+});
+
+/* ============ RENDER: SKELETON ============ */
+function buildSkeleton(){
+  const head = $('#gridHead');
+  const ti = todayIdx();
+  let h = `<div class="head-cell corner"></div>`;
+  DAYS.forEach((d,i)=>{ h += `<div class="head-cell ${i===ti?'today':''}">${d}</div>`; });
+  head.innerHTML = h;
+
+  const timeCol = $('#timeCol');
+  let tc = '';
+  for(let hr=HOUR_START; hr<HOUR_END; hr++){ tc += `<div class="time-label">${String(hr).padStart(2,'0')}:00</div>`; }
+  timeCol.innerHTML = tc;
+
+  $$('.day-col').forEach(el=>el.remove());
+  for(let d=0; d<7; d++){
+    const col = document.createElement('div');
+    col.className = 'day-col' + (d===ti ? ' today-col' : '');
+    col.dataset.day = d;
+    let cells = '';
+    for(let hr=HOUR_START; hr<HOUR_END; hr++){ cells += `<div class="hour-cell" data-day="${d}" data-hour="${hr}"></div>`; }
+    col.innerHTML = cells;
+    $('#gridBody').appendChild(col);
+  }
+  $('#gridBody').style.height = (HOUR_H*(HOUR_END-HOUR_START)) + 'px';
+
+  $$('.hour-cell').forEach(c=>{
+    c.addEventListener('click', ()=>{
+      if(isReadOnly) return;
+      openEntryModal(null, {day:Number(c.dataset.day), hour:Number(c.dataset.hour)});
+    });
+  });
+}
+
+/* ============ RENDER: LEGEND ============ */
+function renderLegend(){
+  const el = $('#legend');
+  let html = `<span class="legend-title">카테고리</span>`;
+  state.categories.forEach(c=>{
+    const off = hiddenCats.has(c.id) ? 'off' : '';
+    html += `<div class="chip ${off}" data-cid="${c.id}">
+      <span class="dot" style="background:${dotColor(c.color)}"></span>${c.name}
+    </div>`;
+  });
+  el.innerHTML = html;
+  $$('.chip').forEach(chip=>{
+    chip.addEventListener('click', ()=>{
+      const id = chip.dataset.cid;
+      if(hiddenCats.has(id)) hiddenCats.delete(id); else hiddenCats.add(id);
+      renderLegend(); renderEntries();
+    });
+  });
+}
+
+/* ============ RENDER: ENTRIES ============ */
+function catById(id){ return state.categories.find(c=>c.id===id) || {color:'#eee', name:'기타'}; }
+
+function renderEntries(){
+  const overlay = $('#overlay');
+  $$('.entry, .nowline').forEach(e=>e.remove());
+  const ti = todayIdx(), nm = nowMin();
+  const baseTop = COVER_PX + HEAD_PX;
+
+  state.entries.forEach(en=>{
+    if(hiddenCats.has(en.categoryId)) return;
+    const cat = catById(en.categoryId);
+    const startM = timeToMin(en.start), endM = timeToMin(en.end);
+    const top = baseTop + (startM - HOUR_START*60) / 60 * HOUR_H;
+    const height = Math.max(20, (endM-startM)/60*HOUR_H - 2);
+    const left = TIME_W + en.day * DAY_W + 3;
+    const isNow = en.day === ti && nm >= startM && nm < endM;
+    const div = document.createElement('div');
+    div.className = 'entry' + (isNow ? ' now' : '');
+    div.style.top = top+'px';
+    div.style.left = left+'px';
+    div.style.width = (DAY_W-8)+'px';
+    div.style.height = height+'px';
+    div.style.background = cat.color;
+    if(isReadOnly) div.style.cursor = 'default';
+    div.innerHTML = `<span class="t">${en.start}–${en.end}</span>${en.title}`;
+    div.addEventListener('click', (e)=>{ e.stopPropagation(); if(isReadOnly) return; openEntryModal(en.id); });
+    overlay.appendChild(div);
+  });
+
+  if(nm >= HOUR_START*60 && nm < HOUR_END*60){
+    const line = document.createElement('div');
+    line.className = 'nowline';
+    line.style.top = (baseTop + (nm-HOUR_START*60)/60*HOUR_H)+'px';
+    line.style.left = (TIME_W + ti*DAY_W)+'px';
+    line.style.width = DAY_W+'px';
+    const hh = String(Math.floor(nm/60)).padStart(2,'0'), mm = String(nm%60).padStart(2,'0');
+    line.innerHTML = `<span class="dotmark"></span><span class="cap">${hh}:${mm}</span>`;
+    overlay.appendChild(line);
+  }
+}
+
+/* ============ RENDER: STICKERS ============ */
+function renderStickers(){
+  $$('.sticker').forEach(s=>s.remove());
+  const layer = $('#stickerLayer');
+  state.stickers.forEach(st=>{
+    const el = document.createElement('div');
+    el.className = 'sticker' + (isReadOnly ? ' readonly' : '');
+    el.style.left = st.x+'px'; el.style.top = st.y+'px';
+    el.style.width = st.w+'px'; el.style.height = st.h+'px';
+    el.style.transform = `rotate(${st.rot||0}deg)`;
+    el.dataset.id = st.id;
+    if(isReadOnly){
+      el.innerHTML = `<img src="${st.src}" draggable="false">`;
+    } else {
+      el.innerHTML = `
+        <img src="${st.src}" draggable="false">
+        <div class="remove" data-act="del">✕</div>
+        <div class="rotate-handle" data-act="rot">⟳</div>
+        <div class="resize-handle" data-act="resize"></div>
+      `;
+      el.querySelector('.remove').addEventListener('click', (e)=>{
+        e.stopPropagation();
+        state.stickers = state.stickers.filter(s=>s.id!==st.id);
+        renderStickers(); queueSave();
+      });
+      el.querySelector('.resize-handle').addEventListener('mousedown', (e)=>startResize(e, st));
+      el.querySelector('.rotate-handle').addEventListener('mousedown', (e)=>startRotate(e, st, el));
+      el.addEventListener('mousedown', (e)=>{
+        if(e.target.closest('.remove') || e.target.closest('.resize-handle') || e.target.closest('.rotate-handle')) return;
+        startDrag(e, st);
+      });
+    }
+    layer.appendChild(el);
+  });
+}
+
+function startDrag(e, st){
+  e.preventDefault();
+  const shellRect = $('.shell').getBoundingClientRect();
+  const startX = e.clientX, startY = e.clientY;
+  const origX = st.x, origY = st.y;
+  function move(ev){
+    st.x = Math.max(0, Math.min(origX + (ev.clientX-startX), shellRect.width - st.w));
+    st.y = Math.max(0, Math.min(origY + (ev.clientY-startY), shellRect.height - st.h));
+    const el = document.querySelector(`.sticker[data-id="${st.id}"]`);
+    if(el){ el.style.left = st.x+'px'; el.style.top = st.y+'px'; }
+  }
+  function up(){
+    document.removeEventListener('mousemove', move);
+    document.removeEventListener('mouseup', up);
+    queueSave();
+  }
+  document.addEventListener('mousemove', move);
+  document.addEventListener('mouseup', up);
+}
+function startResize(e, st){
+  e.preventDefault(); e.stopPropagation();
+  const startX = e.clientX, startY = e.clientY;
+  const origW = st.w, origH = st.h;
+  function move(ev){
+    st.w = Math.max(24, origW + (ev.clientX-startX));
+    st.h = Math.max(24, origH + (ev.clientY-startY));
+    const el = document.querySelector(`.sticker[data-id="${st.id}"]`);
+    if(el){ el.style.width = st.w+'px'; el.style.height = st.h+'px'; }
+  }
+  function up(){
+    document.removeEventListener('mousemove', move);
+    document.removeEventListener('mouseup', up);
+    queueSave();
+  }
+  document.addEventListener('mousemove', move);
+  document.addEventListener('mouseup', up);
+}
+function startRotate(e, st, el){
+  e.preventDefault(); e.stopPropagation();
+  function angleFromCenter(ev){
+    const rect = el.getBoundingClientRect();
+    const cx = rect.left + rect.width/2, cy = rect.top + rect.height/2;
+    const rad = Math.atan2(ev.clientY-cy, ev.clientX-cx);
+    return rad*180/Math.PI + 90;
+  }
+  function move(ev){
+    st.rot = Math.round(angleFromCenter(ev));
+    el.style.transform = `rotate(${st.rot}deg)`;
+  }
+  function up(){
+    document.removeEventListener('mousemove', move);
+    document.removeEventListener('mouseup', up);
+    queueSave();
+  }
+  document.addEventListener('mousemove', move);
+  document.addEventListener('mouseup', up);
+}
+function boardOffsetInShell(){
+  const shellRect = $('.shell').getBoundingClientRect();
+  const boardRect = $('#capture-area').getBoundingClientRect();
+  return { x: boardRect.left - shellRect.left, y: boardRect.top - shellRect.top };
+}
+
+/* ============ PRESET STICKERS (washi tape) ============ */
+const TAPE_PRESETS = [
+  {name:'핑크 테이프',   color:'#FFC1CE', stripe:'#FFFFFF'},
+  {name:'스카이 테이프', color:'#C7E4F7', stripe:'#FFFFFF'},
+  {name:'레몬 테이프',   color:'#FBF0B0', stripe:'#FFFFFF'},
+  {name:'민트 테이프',   color:'#C6EEDA', stripe:'#FFFFFF'},
+  {name:'라벤더 테이프', color:'#E1D4F5', stripe:'#FFFFFF'},
+  {name:'크래프트 테이프', color:'#E7D8C3', stripe:'#FBF3E8'},
+];
+function tapeDataUri(color, stripe){
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='200' height='56'>
+    <defs>
+      <pattern id='s' width='14' height='14' patternTransform='rotate(45)' patternUnits='userSpaceOnUse'>
+        <rect width='14' height='14' fill='${color}'/>
+        <rect width='7' height='14' fill='${stripe}' opacity='0.35'/>
+      </pattern>
+    </defs>
+    <polygon points='8,4 200,0 192,52 0,56' fill='url(%23s)'/>
+    <polygon points='8,4 200,0 192,52 0,56' fill='${color}' opacity='0.14'/>
+  </svg>`;
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+}
+function renderPresetGrid(){
+  const el = $('#presetGrid');
+  el.innerHTML = TAPE_PRESETS.map((t,i)=>`
+    <div class="preset-item" data-i="${i}">
+      <img src="${tapeDataUri(t.color, t.stripe)}" alt="${t.name}">
+      <span>${t.name}</span>
+    </div>
+  `).join('');
+  $$('.preset-item').forEach(item=>{
+    item.addEventListener('click', ()=>{
+      const t = TAPE_PRESETS[Number(item.dataset.i)];
+      const off = boardOffsetInShell();
+      state.stickers.push({
+        id: uid(), src: tapeDataUri(t.color, t.stripe),
+        x: off.x + 80 + Math.random()*300, y: off.y + 20 + Math.random()*20,
+        w: 130, h: 36, rot: Math.round(Math.random()*16-8),
+      });
+      renderStickers(); queueSave();
+      toast('테이프 스티커를 붙였어요');
+    });
+  });
+}
+$('#btnPresetSticker').addEventListener('click', ()=>{ renderPresetGrid(); showModal('presetModalBg'); });
+
+/* ============ ENTRY MODAL ============ */
+function openEntryModal(entryId, prefill){
+  editingEntryId = entryId;
+  const modalTitle = $('#entryModalTitle');
+  const dayPick = $('#dayPick');
+  dayPick.innerHTML = DAYS.map((d,i)=>`<div class="opt" data-day="${i}">${d}</div>`).join('');
+  const catPick = $('#catPick');
+  catPick.innerHTML = state.categories.map(c=>`<div class="opt" data-cat="${c.id}">${c.name}</div>`).join('');
+
+  let entry;
+  if(entryId){
+    entry = state.entries.find(e=>e.id===entryId);
+    modalTitle.textContent = '일정 수정';
+    $('#btnDeleteEntry').style.display = 'inline-flex';
+    $('#fTitle').value = entry.title;
+    $('#fStart').value = entry.start;
+    $('#fEnd').value = entry.end;
+    selectDayOpt(entry.day);
+    selectCatOpt(entry.categoryId);
+  } else {
+    modalTitle.textContent = '일정 추가';
+    $('#btnDeleteEntry').style.display = 'none';
+    $('#fTitle').value = '';
+    const day = prefill ? prefill.day : todayIdx();
+    const hour = prefill ? prefill.hour : 9;
+    $('#fStart').value = String(hour).padStart(2,'0')+':00';
+    $('#fEnd').value = String(Math.min(23,hour+1)).padStart(2,'0')+':00';
+    selectDayOpt(day);
+    selectCatOpt(state.categories[0] ? state.categories[0].id : null);
+  }
+  $$('#dayPick .opt').forEach(o=>o.addEventListener('click', ()=>selectDayOpt(Number(o.dataset.day))));
+  $$('#catPick .opt').forEach(o=>o.addEventListener('click', ()=>selectCatOpt(o.dataset.cat)));
+  showModal('entryModalBg');
+}
+function selectDayOpt(day){ $$('#dayPick .opt').forEach(o=>o.classList.toggle('sel', Number(o.dataset.day)===day)); }
+function selectCatOpt(catId){ $$('#catPick .opt').forEach(o=>o.classList.toggle('sel', o.dataset.cat===catId)); }
+function getSelectedDay(){ const el = $('#dayPick .opt.sel'); return el ? Number(el.dataset.day) : 0; }
+function getSelectedCat(){ const el = $('#catPick .opt.sel'); return el ? el.dataset.cat : (state.categories[0]?.id || null); }
+
+$('#btnSaveEntry').addEventListener('click', ()=>{
+  const title = $('#fTitle').value.trim();
+  const start = $('#fStart').value, end = $('#fEnd').value;
+  if(!title){ toast('제목을 입력해주세요'); return; }
+  if(timeToMin(end) <= timeToMin(start)){ toast('종료 시간이 시작보다 늦어야 해요'); return; }
+  const day = getSelectedDay();
+  const categoryId = getSelectedCat();
+  if(editingEntryId){
+    const e = state.entries.find(x=>x.id===editingEntryId);
+    Object.assign(e, {title, start, end, day, categoryId});
+  } else {
+    state.entries.push({id:uid(), title, start, end, day, categoryId});
+  }
+  renderEntries(); queueSave(); hideModal('entryModalBg');
+  toast('저장했어요');
+});
+$('#btnDeleteEntry').addEventListener('click', ()=>{
+  state.entries = state.entries.filter(e=>e.id!==editingEntryId);
+  renderEntries(); queueSave(); hideModal('entryModalBg');
+  toast('삭제했어요');
+});
+
+/* ============ CATEGORY MODAL ============ */
+function renderCatList(){
+  const wrap = $('#catListWrap');
+  wrap.innerHTML = state.categories.map(c=>`
+    <div class="cat-list-item" data-id="${c.id}">
+      <input type="color" class="color-trigger" value="${c.color}" data-role="color">
+      <input type="text" value="${c.name}" data-role="name">
+      <button class="stk-btn" data-role="del">✕</button>
+    </div>
+  `).join('') || `<div class="hint">카테고리가 없어요. 추가해보세요.</div>`;
+
+  $$('#catListWrap .cat-list-item').forEach(row=>{
+    const id = row.dataset.id;
+    const cat = state.categories.find(c=>c.id===id);
+    row.querySelector('[data-role=color]').addEventListener('input', (e)=>{
+      cat.color = e.target.value;
+      renderLegend(); renderEntries(); queueSave();
+    });
+    row.querySelector('[data-role=name]').addEventListener('input', (e)=>{
+      cat.name = e.target.value; renderLegend(); renderEntries(); queueSave();
+    });
+    row.querySelector('[data-role=del]').addEventListener('click', ()=>{
+      state.categories = state.categories.filter(c=>c.id!==id);
+      state.entries.forEach(en=>{ if(en.categoryId===id) en.categoryId = state.categories[0]?.id || null; });
+      renderCatList(); renderLegend(); renderEntries(); queueSave();
+    });
+  });
+}
+$('#btnAddCat').addEventListener('click', ()=>{
+  state.categories.push({id:uid(), name:'새 카테고리', color: CAT_PALETTE[state.categories.length % CAT_PALETTE.length]});
+  renderCatList(); renderLegend(); queueSave();
+});
+
+/* ============ MODAL HELPERS ============ */
+function showModal(id){ $('#'+id).classList.add('show'); }
+function hideModal(id){ $('#'+id).classList.remove('show'); }
+$$('[data-close]').forEach(b=>b.addEventListener('click', ()=>hideModal(b.dataset.close)));
+$$('.overlay-bg').forEach(bg=>bg.addEventListener('click',(e)=>{ if(e.target===bg) bg.classList.remove('show'); }));
+
+$('#btnAddEntry').addEventListener('click', ()=>openEntryModal(null, {day:todayIdx(), hour:9}));
+$('#btnCategory').addEventListener('click', ()=>{ renderCatList(); showModal('catModalBg'); });
+
+/* ============ STICKER UPLOAD ============ */
+$('#stickerInput').addEventListener('change', (e)=>{
+  const files = Array.from(e.target.files);
+  const off = boardOffsetInShell();
+  let idx = 0;
+  files.forEach(file=>{
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      state.stickers.push({
+        id: uid(), src: reader.result,
+        x: off.x + 60 + idx*20 + Math.random()*40,
+        y: off.y + 40 + idx*15 + Math.random()*40,
+        w: 84, h: 84, rot: 0,
+      });
+      idx++;
+      renderStickers(); queueSave();
+    };
+    reader.readAsDataURL(file);
+  });
+  e.target.value = '';
+  toast('스티커를 추가했어요. 화면 어디든 끌어서 옮겨보세요.');
+});
+
+/* ============ RESET ============ */
+$('#btnReset').addEventListener('click', ()=>{
+  if(isReadOnly) return;
+  if(!confirm('정말 모든 일정과 스티커, 표지 이미지를 초기화할까요?')) return;
+  state.cover = null; state.entries = []; state.stickers = [];
+  renderCover(); renderEntries(); renderStickers(); queueSave();
+  toast('초기화했어요');
+});
+
+/* ============ SHARE ============ */
+function genCode(){
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let c = '';
+  for(let i=0;i<6;i++) c += chars[Math.floor(Math.random()*chars.length)];
+  return c;
+}
+$('#btnShare').addEventListener('click', async ()=>{
+  if(isReadOnly) return;
+  const code = genCode();
+  try{
+    await window.storage.set('dakku_share_'+code, JSON.stringify(myState), true);
+    $('#shareCodeDisplay').textContent = code;
+    showModal('shareModalBg');
+  }catch(e){ toast('공유 코드 생성에 실패했어요'); }
+});
+$('#btnCopyCode').addEventListener('click', ()=>{
+  const code = $('#shareCodeDisplay').textContent;
+  navigator.clipboard?.writeText(code).then(()=>toast('코드를 복사했어요'));
+});
+$('#btnLoadCode').addEventListener('click', async ()=>{
+  const code = $('#loadCode').value.trim().toUpperCase();
+  if(!code){ toast('코드를 입력해주세요'); return; }
+  $('#loadCode').value = '';
+  await addFriendPage(code);
+});
+
+/* ============ MULTI-PAGE INDEX (my board + friends' shared boards) ============ */
+function rerenderAll(){
+  buildSkeleton();
+  measureLayout();
+  renderCover();
+  renderLegend();
+  renderEntries();
+  renderStickers();
+}
+function updateReadonlyUI(){
+  $('#windowEl').classList.toggle('readonly', isReadOnly);
+  const badge = $('#readonlyBadge');
+  if(isReadOnly){
+    badge.style.display = 'inline-flex';
+    badge.textContent = `${currentPageId} 코드 · 보기 전용`;
+  } else {
+    badge.style.display = 'none';
+  }
+}
+function switchToMe(){
+  if(currentPageId === 'me') return;
+  currentPageId = 'me';
+  isReadOnly = false;
+  state = myState;
+  hiddenCats = new Set();
+  rerenderAll();
+  renderPageIndex();
+  updateReadonlyUI();
+}
+async function switchToFriend(code){
+  currentPageId = code;
+  toast('불러오는 중...');
+  try{
+    const res = await window.storage.get('dakku_share_'+code, true);
+    if(res && res.value){
+      state = Object.assign({cover:null, categories:[], entries:[], stickers:[]}, JSON.parse(res.value));
+      isReadOnly = true;
+      hiddenCats = new Set();
+      rerenderAll();
+      toast('친구의 시간표를 불러왔어요');
+    } else {
+      toast('해당 시간표를 찾을 수 없어요');
+      currentPageId = 'me'; state = myState; isReadOnly = false; hiddenCats = new Set();
+      rerenderAll();
+    }
+  }catch(e){
+    toast('불러오기에 실패했어요');
+    currentPageId = 'me'; state = myState; isReadOnly = false; hiddenCats = new Set();
+    rerenderAll();
+  }
+  renderPageIndex();
+  updateReadonlyUI();
+}
+async function addFriendPage(code){
+  const exists = friendPages.find(p=>p.code===code);
+  if(!exists){
+    toast('코드를 확인하는 중...');
+    try{
+      const res = await window.storage.get('dakku_share_'+code, true);
+      if(!res || !res.value){ toast('해당 코드를 찾을 수 없어요'); return; }
+    }catch(e){ toast('해당 코드를 찾을 수 없어요'); return; }
+    friendPages.push({ code, color: CAT_PALETTE[friendPages.length % CAT_PALETTE.length] });
+    saveFriendPages();
+  }
+  renderPageIndex();
+  await switchToFriend(code);
+}
+function removeFriendPage(code){
+  friendPages = friendPages.filter(p=>p.code!==code);
+  saveFriendPages();
+  if(currentPageId === code) switchToMe();
+  else renderPageIndex();
+}
+async function saveFriendPages(){
+  try{ await window.storage.set('dakku_friend_codes', JSON.stringify(friendPages), false); }catch(e){}
+}
+async function loadFriendPagesList(){
+  try{
+    const res = await window.storage.get('dakku_friend_codes', false);
+    if(res && res.value){
+      const parsed = JSON.parse(res.value);
+      if(Array.isArray(parsed)) friendPages = parsed;
+    }
+  }catch(e){ /* none saved yet */ }
+}
+function renderPageIndex(){
+  const el = $('#pageIndex');
+  let html = `<div class="page-tab me-tab ${currentPageId==='me'?'active':''}" data-page="me">내 시간표</div>`;
+  friendPages.forEach(p=>{
+    const active = currentPageId===p.code ? 'active' : '';
+    html += `<div class="page-tab ${active}" data-page="${p.code}" style="background:${dotColor(p.color)}">
+      ${p.code}<span class="tab-remove" data-remove="${p.code}">✕</span>
+    </div>`;
+  });
+  el.innerHTML = html;
+  $$('.page-tab').forEach(tab=>{
+    tab.addEventListener('click', (e)=>{
+      if(e.target.classList.contains('tab-remove')) return;
+      const pid = tab.dataset.page;
+      if(pid==='me') switchToMe(); else switchToFriend(pid);
+    });
+  });
+  $$('.tab-remove').forEach(btn=>{
+    btn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      removeFriendPage(btn.dataset.remove);
+    });
+  });
+}
+
+/* ============ EXPORT ============ */
+const EXPORT_SCALE = 2;
+async function captureStage(includeStickers){
+  const layer = $('#stickerLayer');
+  if(!includeStickers) layer.style.visibility = 'hidden';
+  const shellEl = $('.shell');
+  // capture the whole shell (titlebar/toolbar/legend/board + the free-floating
+  // sticker layer on top of it), then crop down to just the board's rect —
+  // this correctly composites any stickers that overlap the board while
+  // excluding the toolbar/legend/titlebar chrome.
+  const fullCanvas = await html2canvas(shellEl, {backgroundColor:null, scale:EXPORT_SCALE, useCORS:true});
+  if(!includeStickers) layer.style.visibility = 'visible';
+
+  const shellRect = shellEl.getBoundingClientRect();
+  const boardRect = $('#capture-area').getBoundingClientRect();
+  const cx = Math.round((boardRect.left - shellRect.left) * EXPORT_SCALE);
+  const cy = Math.round((boardRect.top - shellRect.top) * EXPORT_SCALE);
+  const cw = Math.round(boardRect.width * EXPORT_SCALE);
+  const ch = Math.round(boardRect.height * EXPORT_SCALE);
+  const out = document.createElement('canvas');
+  out.width = cw; out.height = ch;
+  out.getContext('2d').drawImage(fullCanvas, cx, cy, cw, ch, 0, 0, cw, ch);
+  return out;
+}
+function cropBanner(canvas){
+  const bannerPx = Math.round(COVER_PX * EXPORT_SCALE);
+  if(bannerPx <= 0 || bannerPx >= canvas.height) return canvas;
+  const out = document.createElement('canvas');
+  out.width = canvas.width; out.height = canvas.height - bannerPx;
+  out.getContext('2d').drawImage(canvas, 0, bannerPx, canvas.width, canvas.height-bannerPx, 0, 0, canvas.width, canvas.height-bannerPx);
+  return out;
+}
+
+async function exportImage(mode){
+  if(mode === 'original'){
+    toast('이미지를 만들고 있어요...');
+    try{
+      let canvas = await captureStage(true);
+      canvas = cropBanner(canvas);
+      const link = document.createElement('a');
+      link.download = 'timetable.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      toast('저장 완료');
+    }catch(e){ console.error(e); toast('이미지 저장에 실패했어요'); }
+    return;
+  }
+
+  const includeCover = $('#optIncludeCover').checked && !!state.cover;
+  const includeStickers = $('#optIncludeStickers').checked;
+  toast('이미지를 만들고 있어요...');
+  try{
+    let stageCanvas = await captureStage(includeStickers);
+    if(!includeCover) stageCanvas = cropBanner(stageCanvas);
+
+    const W = 1920, H = 1080;
+    const wc = document.createElement('canvas');
+    wc.width = W; wc.height = H;
+    const ctx = wc.getContext('2d');
+    const t = THEMES[currentTheme];
+    const grad = ctx.createLinearGradient(0,0,W,H);
+    grad.addColorStop(0, t.bgA); grad.addColorStop(0.5, t.bgB); grad.addColorStop(1, t.bgC);
+    ctx.fillStyle = grad; ctx.fillRect(0,0,W,H);
+    const scale = Math.min((W-160)/stageCanvas.width, (H-160)/stageCanvas.height);
+    const dw = stageCanvas.width*scale, dh = stageCanvas.height*scale;
+    const dx = (W-dw)/2, dy = (H-dh)/2;
+    ctx.shadowColor = 'rgba(20,20,30,0.18)';
+    ctx.shadowBlur = 30;
+    ctx.drawImage(stageCanvas, dx, dy, dw, dh);
+
+    const link = document.createElement('a');
+    link.download = 'timetable-wallpaper.png';
+    link.href = wc.toDataURL('image/png');
+    link.click();
+    toast('저장 완료');
+  }catch(e){
+    console.error(e);
+    toast('이미지 저장에 실패했어요');
+  }
+}
+$('#btnExportOrig').addEventListener('click', ()=>exportImage('original'));
+$('#btnExportWall').addEventListener('click', ()=>{
+  $('#optIncludeCover').checked = true;
+  $('#optIncludeCover').disabled = !state.cover;
+  $('#coverMuted').textContent = state.cover ? '' : '표지 이미지 없음';
+  $('#optIncludeStickers').checked = true;
+  showModal('exportModalBg');
+});
+$('#btnConfirmExportWall').addEventListener('click', ()=>{
+  hideModal('exportModalBg');
+  exportImage('wallpaper');
+});
+
+/* ============ INIT ============ */
+async function init(){
+  await loadTheme();
+  await loadLocal();
+  myState = state;
+  await loadFriendPagesList();
+  buildSkeleton();
+  renderCover();
+  measureLayout();
+  renderLegend();
+  renderEntries();
+  renderStickers();
+  renderPageIndex();
+  setInterval(()=>{ refreshTodayMarkers(); renderEntries(); }, 30000);
+}
+function refreshTodayMarkers(){
+  const ti = todayIdx();
+  $$('.head-cell').forEach((c,i)=>{ if(i>0) c.classList.toggle('today', i-1===ti); });
+  $$('.day-col').forEach((c,i)=> c.classList.toggle('today-col', i===ti));
+  renderCover();
+}
+init();
+</script>
+</body>
+</html>
