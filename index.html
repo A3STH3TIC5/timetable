@@ -206,6 +206,14 @@ input[type=color]::-moz-color-swatch{ border:none; border-radius:50%; }
 }
 .entry .t{ font-size:9px; opacity:.6; display:block; font-weight:600; }
 .entry.now{ outline:2px solid var(--danger); }
+.entry.unlocked{ outline:1.5px dashed rgba(20,20,30,0.35); cursor:grab; }
+.entry.unlocked:active{ cursor:grabbing; }
+.entry .entry-lock{
+  position:absolute; top:2px; right:3px; font-size:9.5px; line-height:1; opacity:.55; cursor:pointer;
+  padding:2px; border-radius:5px;
+}
+.entry .entry-lock:hover{ opacity:1; background:rgba(255,255,255,0.6); }
+.entry .memo-dot{ position:absolute; bottom:2px; right:3px; font-size:9px; opacity:.7; line-height:1; }
 
 .nowline{ position:absolute; height:2px; background:var(--danger); pointer-events:none; z-index:5; border-radius:2px; }
 .nowline .dotmark{ position:absolute; left:-4px; top:-3px; width:8px; height:8px; border-radius:50%; background:var(--danger); box-shadow:0 0 0 3px rgba(229,72,77,0.22); }
@@ -221,6 +229,13 @@ input[type=color]::-moz-color-swatch{ border:none; border-radius:50%; }
   display:flex; align-items:center; justify-content:center; opacity:0; transition:opacity .15s ease; z-index:2; cursor:pointer;
 }
 .sticker:hover .remove{ opacity:1; }
+.sticker .copy-btn{
+  position:absolute; top:-8px; left:-8px; width:17px; height:17px; border-radius:50%;
+  background:#fff; border:2px solid var(--accent-strong); color:var(--accent-strong); font-size:9px;
+  display:flex; align-items:center; justify-content:center; opacity:0; transition:opacity .15s ease; z-index:2; cursor:pointer;
+}
+.sticker:hover .copy-btn{ opacity:1; }
+.sticker.selected{ outline:2px dashed var(--accent-strong); outline-offset:4px; border-radius:6px; }
 .sticker .resize-handle{
   position:absolute; bottom:-7px; right:-7px; width:16px; height:16px; border-radius:50%;
   background:#fff; border:2px solid var(--accent-strong); cursor:nwse-resize; opacity:0; transition:opacity .15s ease; z-index:2;
@@ -252,6 +267,11 @@ input[type=color]::-moz-color-swatch{ border:none; border-radius:50%; }
   width:100%; padding:9px 11px; border:1px solid rgba(0,0,0,0.09); border-radius:10px; font-family:inherit; font-size:13.5px;
   background:#FAFAFB;
 }
+.field textarea{
+  width:100%; padding:9px 11px; border:1px solid rgba(0,0,0,0.09); border-radius:10px; font-family:inherit; font-size:13.5px;
+  background:#FAFAFB; resize:vertical; line-height:1.5;
+}
+.field textarea:focus{ outline:none; border-color:var(--accent); background:#fff; }
 .field input:focus{ outline:none; border-color:var(--accent); background:#fff; }
 .row2{ display:flex; gap:10px; }
 .row2 .field{ flex:1; }
@@ -390,7 +410,7 @@ input[type=color]::-moz-color-swatch{ border:none; border-radius:50%; }
       </div>
     </div>
 
-    <div class="note">빈칸을 클릭해 일정을 추가하고, 스티커는 화면 어디에든 끌어서 배치·회전·크기 조절할 수 있어요. 변경 사항은 자동으로 저장됩니다. 오른쪽 인덱스에서 친구의 시간표도 구경할 수 있어요.</div>
+    <div class="note">일정은 기본적으로 🔒 잠겨 있어 클릭하면 메모만 남길 수 있어요. 자물쇠를 눌러 잠금 해제하면 드래그로 시간을 옮기거나 전체 수정을 할 수 있습니다. 스티커는 화면 어디에든 배치할 수 있고, 이미지를 복사해 Ctrl+V로 붙여넣거나 스티커를 선택 후 Ctrl+C/V로 복제할 수 있어요. 오른쪽 인덱스에서 친구의 시간표도 구경할 수 있어요.</div>
   </div>
   <div id="stickerLayer"></div>
 </div>
@@ -435,10 +455,30 @@ input[type=color]::-moz-color-swatch{ border:none; border-radius:50%; }
       <label>카테고리</label>
       <div class="cat-pick" id="catPick"></div>
     </div>
+    <div class="field">
+      <label>메모</label>
+      <textarea id="fMemo" rows="3" placeholder="이 일정에 대한 메모를 적어보세요"></textarea>
+    </div>
     <div class="modal-actions">
       <button class="btn small ghost" id="btnDeleteEntry" style="display:none;">삭제</button>
       <button class="btn small" data-close="entryModalBg">취소</button>
       <button class="btn small primary" id="btnSaveEntry">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- Memo-only Modal (for locked entries) -->
+<div class="overlay-bg" id="memoModalBg">
+  <div class="modal">
+    <button class="close-x" data-close="memoModalBg">✕</button>
+    <h3 id="memoModalTitle">메모</h3>
+    <div class="hint" id="memoModalMeta" style="margin-top:-8px; margin-bottom:12px;"></div>
+    <div class="field">
+      <textarea id="fMemoOnly" rows="5" placeholder="이 일정에 대한 메모를 적어보세요"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn small" data-close="memoModalBg">취소</button>
+      <button class="btn small primary" id="btnSaveMemoOnly">저장</button>
     </div>
   </div>
 </div>
@@ -686,6 +726,8 @@ let state = {
 let hiddenCats = new Set();
 let editingEntryId = null;
 let saveTimer = null;
+let selectedStickerId = null;
+let copiedStickerBuffer = null;
 let COVER_PX = COVER_H_CSS, HEAD_PX = 40;
 
 /* ---- multi-page (share-code index) state ----
@@ -902,6 +944,8 @@ function renderLegend(){
 /* ============ RENDER: ENTRIES ============ */
 function catById(id){ return state.categories.find(c=>c.id===id) || {color:'#eee', name:'기타'}; }
 
+function isLocked(en){ return en.locked !== false; } // undefined/true => locked (default, safe)
+
 function renderEntries(){
   const overlay = $('#overlay');
   $$('.entry, .nowline').forEach(e=>e.remove());
@@ -916,16 +960,30 @@ function renderEntries(){
     const height = Math.max(20, (endM-startM)/60*HOUR_H - 2);
     const left = TIME_W + en.day * DAY_W + 3;
     const isNow = en.day === ti && nm >= startM && nm < endM;
+    const locked = isLocked(en);
     const div = document.createElement('div');
-    div.className = 'entry' + (isNow ? ' now' : '');
+    div.className = 'entry' + (isNow ? ' now' : '') + (!locked ? ' unlocked' : '');
     div.style.top = top+'px';
     div.style.left = left+'px';
     div.style.width = (DAY_W-8)+'px';
     div.style.height = height+'px';
     div.style.background = cat.color;
     if(isReadOnly) div.style.cursor = 'default';
-    div.innerHTML = `<span class="t">${en.start}–${en.end}</span>${en.title}`;
-    div.addEventListener('click', (e)=>{ e.stopPropagation(); if(isReadOnly) return; openEntryModal(en.id); });
+    div.innerHTML = `<span class="t">${en.start}–${en.end}</span>${en.title}`
+      + (en.memo ? `<span class="memo-dot" title="메모 있음">📝</span>` : '')
+      + (!isReadOnly ? `<span class="entry-lock" title="${locked?'잠금 — 눌러서 해제':'잠금 해제됨 — 눌러서 잠금'}">${locked?'🔒':'🔓'}</span>` : '');
+
+    if(!isReadOnly){
+      const lockBtn = div.querySelector('.entry-lock');
+      lockBtn.addEventListener('mousedown', (e)=>e.stopPropagation());
+      lockBtn.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        en.locked = !isLocked(en);
+        renderEntries(); queueSave();
+        toast(isLocked(en) ? '일정을 잠갔어요' : '잠금을 해제했어요 — 드래그해서 시간을 옮길 수 있어요');
+      });
+      attachEntryInteraction(div, en, locked);
+    }
     overlay.appendChild(div);
   });
 
@@ -941,13 +999,68 @@ function renderEntries(){
   }
 }
 
+function minToTime(m){
+  m = Math.max(HOUR_START*60, Math.min(HOUR_END*60-1, m));
+  const h = Math.floor(m/60), mm = m%60;
+  return String(h).padStart(2,'0')+':'+String(mm).padStart(2,'0');
+}
+
+// Locked entries: click opens the memo-only editor. Unlocked entries: a small
+// drag repositions them to a new day/time (snapped to 15 min); a plain click
+// (no meaningful movement) opens the full edit modal instead.
+function attachEntryInteraction(div, en, locked){
+  div.addEventListener('mousedown', (e)=>{
+    if(e.target.closest('.entry-lock')) return;
+    if(locked){
+      function up(){ document.removeEventListener('mouseup', up); openMemoModal(en.id); }
+      document.addEventListener('mouseup', up);
+      return;
+    }
+    e.preventDefault();
+    const startX = e.clientX, startY = e.clientY;
+    const origLeft = parseFloat(div.style.left), origTop = parseFloat(div.style.top);
+    let moved = false;
+    function move(ev){
+      const dx = ev.clientX-startX, dy = ev.clientY-startY;
+      if(Math.abs(dx) > 4 || Math.abs(dy) > 4) moved = true;
+      if(moved){
+        div.style.left = (origLeft+dx)+'px';
+        div.style.top = (origTop+dy)+'px';
+      }
+    }
+    function up(){
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+      if(moved){
+        const newLeft = parseFloat(div.style.left), newTop = parseFloat(div.style.top);
+        const dayIdx = Math.round((newLeft - TIME_W - 3) / DAY_W);
+        const clampedDay = Math.max(0, Math.min(6, dayIdx));
+        const baseTop = COVER_PX + HEAD_PX;
+        const minutesFromTop = ((newTop - baseTop) / HOUR_H) * 60;
+        const snapped = Math.round(minutesFromTop/15)*15;
+        const duration = timeToMin(en.end) - timeToMin(en.start);
+        const newStartMin = Math.max(HOUR_START*60, Math.min(HOUR_END*60-duration, snapped));
+        en.day = clampedDay;
+        en.start = minToTime(newStartMin);
+        en.end = minToTime(newStartMin+duration);
+        renderEntries(); queueSave();
+        toast('일정을 옮겼어요');
+      } else {
+        openEntryModal(en.id);
+      }
+    }
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  });
+}
+
 /* ============ RENDER: STICKERS ============ */
 function renderStickers(){
   $$('.sticker').forEach(s=>s.remove());
   const layer = $('#stickerLayer');
   state.stickers.forEach(st=>{
     const el = document.createElement('div');
-    el.className = 'sticker' + (isReadOnly ? ' readonly' : '');
+    el.className = 'sticker' + (isReadOnly ? ' readonly' : '') + (st.id===selectedStickerId ? ' selected' : '');
     el.style.left = st.x+'px'; el.style.top = st.y+'px';
     el.style.width = st.w+'px'; el.style.height = st.h+'px';
     el.style.transform = `rotate(${st.rot||0}deg)`;
@@ -958,23 +1071,41 @@ function renderStickers(){
       el.innerHTML = `
         <img src="${st.src}" draggable="false">
         <div class="remove" data-act="del">✕</div>
+        <div class="copy-btn" data-act="copy" title="복제 (Ctrl+C / Ctrl+V도 가능)">⧉</div>
         <div class="rotate-handle" data-act="rot">⟳</div>
         <div class="resize-handle" data-act="resize"></div>
       `;
       el.querySelector('.remove').addEventListener('click', (e)=>{
         e.stopPropagation();
         state.stickers = state.stickers.filter(s=>s.id!==st.id);
+        if(selectedStickerId===st.id) selectedStickerId = null;
         renderStickers(); queueSave();
+      });
+      el.querySelector('.copy-btn').addEventListener('click', (e)=>{
+        e.stopPropagation();
+        duplicateSticker(st);
       });
       el.querySelector('.resize-handle').addEventListener('mousedown', (e)=>startResize(e, st));
       el.querySelector('.rotate-handle').addEventListener('mousedown', (e)=>startRotate(e, st, el));
       el.addEventListener('mousedown', (e)=>{
-        if(e.target.closest('.remove') || e.target.closest('.resize-handle') || e.target.closest('.rotate-handle')) return;
+        if(e.target.closest('.remove') || e.target.closest('.copy-btn') || e.target.closest('.resize-handle') || e.target.closest('.rotate-handle')) return;
+        selectedStickerId = st.id;
+        updateStickerSelectionVisual();
         startDrag(e, st);
       });
     }
     layer.appendChild(el);
   });
+}
+function updateStickerSelectionVisual(){
+  $$('.sticker').forEach(el=>el.classList.toggle('selected', el.dataset.id===selectedStickerId));
+}
+function duplicateSticker(st){
+  const copy = Object.assign({}, st, { id: uid(), x: st.x+18, y: st.y+18 });
+  state.stickers.push(copy);
+  selectedStickerId = copy.id;
+  renderStickers(); queueSave();
+  toast('스티커를 복제했어요');
 }
 
 function startDrag(e, st){
@@ -1040,6 +1171,61 @@ function boardOffsetInShell(){
   return { x: boardRect.left - shellRect.left, y: boardRect.top - shellRect.top };
 }
 
+/* deselect a sticker when clicking anywhere outside it */
+document.addEventListener('mousedown', (e)=>{
+  if(selectedStickerId && !e.target.closest('.sticker')){
+    selectedStickerId = null;
+    updateStickerSelectionVisual();
+  }
+});
+
+/* copy/paste a selected sticker with the keyboard (Ctrl/Cmd+C, Ctrl/Cmd+V) */
+document.addEventListener('keydown', (e)=>{
+  if(isReadOnly) return;
+  if($('.overlay-bg.show')) return; // don't hijack shortcuts while a modal/textarea is active
+  const key = e.key.toLowerCase();
+  const withMod = e.ctrlKey || e.metaKey;
+  if(!withMod) return;
+  if(key === 'c' && selectedStickerId){
+    const st = state.stickers.find(s=>s.id===selectedStickerId);
+    if(st) copiedStickerBuffer = Object.assign({}, st);
+  } else if(key === 'v' && copiedStickerBuffer){
+    duplicateSticker(copiedStickerBuffer);
+    copiedStickerBuffer = Object.assign({}, copiedStickerBuffer, { x: copiedStickerBuffer.x+18, y: copiedStickerBuffer.y+18 });
+  }
+});
+
+/* paste an image straight from the OS clipboard as a new sticker */
+document.addEventListener('paste', (e)=>{
+  if(isReadOnly) return;
+  if($('.overlay-bg.show')) return;
+  const items = e.clipboardData && e.clipboardData.items;
+  if(!items) return;
+  let handled = false;
+  Array.from(items).forEach(item=>{
+    if(item.type && item.type.startsWith('image/')){
+      const file = item.getAsFile();
+      if(!file) return;
+      handled = true;
+      const reader = new FileReader();
+      reader.onload = ()=>{
+        const off = boardOffsetInShell();
+        const ns = {
+          id: uid(), src: reader.result,
+          x: off.x + 70 + Math.random()*200, y: off.y + 40 + Math.random()*80,
+          w: 100, h: 100, rot: Math.round(Math.random()*10-5),
+        };
+        state.stickers.push(ns);
+        selectedStickerId = ns.id;
+        renderStickers(); queueSave();
+        toast('클립보드 이미지를 스티커로 붙여넣었어요');
+      };
+      reader.readAsDataURL(file);
+    }
+  });
+  if(handled) e.preventDefault();
+});
+
 /* ============ PRESET STICKERS (washi tape) ============ */
 const TAPE_PRESETS = [
   {name:'핑크 테이프',   color:'#FFC1CE', stripe:'#FFFFFF'},
@@ -1103,12 +1289,14 @@ function openEntryModal(entryId, prefill){
     $('#fTitle').value = entry.title;
     $('#fStart').value = entry.start;
     $('#fEnd').value = entry.end;
+    $('#fMemo').value = entry.memo || '';
     selectDayOpt(entry.day);
     selectCatOpt(entry.categoryId);
   } else {
     modalTitle.textContent = '일정 추가';
     $('#btnDeleteEntry').style.display = 'none';
     $('#fTitle').value = '';
+    $('#fMemo').value = '';
     const day = prefill ? prefill.day : todayIdx();
     const hour = prefill ? prefill.hour : 9;
     $('#fStart').value = String(hour).padStart(2,'0')+':00';
@@ -1128,15 +1316,16 @@ function getSelectedCat(){ const el = $('#catPick .opt.sel'); return el ? el.dat
 $('#btnSaveEntry').addEventListener('click', ()=>{
   const title = $('#fTitle').value.trim();
   const start = $('#fStart').value, end = $('#fEnd').value;
+  const memo = $('#fMemo').value;
   if(!title){ toast('제목을 입력해주세요'); return; }
   if(timeToMin(end) <= timeToMin(start)){ toast('종료 시간이 시작보다 늦어야 해요'); return; }
   const day = getSelectedDay();
   const categoryId = getSelectedCat();
   if(editingEntryId){
     const e = state.entries.find(x=>x.id===editingEntryId);
-    Object.assign(e, {title, start, end, day, categoryId});
+    Object.assign(e, {title, start, end, day, categoryId, memo});
   } else {
-    state.entries.push({id:uid(), title, start, end, day, categoryId});
+    state.entries.push({id:uid(), title, start, end, day, categoryId, memo, locked:true});
   }
   renderEntries(); queueSave(); hideModal('entryModalBg');
   toast('저장했어요');
@@ -1145,6 +1334,25 @@ $('#btnDeleteEntry').addEventListener('click', ()=>{
   state.entries = state.entries.filter(e=>e.id!==editingEntryId);
   renderEntries(); queueSave(); hideModal('entryModalBg');
   toast('삭제했어요');
+});
+
+/* ============ MEMO-ONLY MODAL (for locked entries) ============ */
+let editingMemoEntryId = null;
+function openMemoModal(entryId){
+  const en = state.entries.find(e=>e.id===entryId);
+  if(!en) return;
+  editingMemoEntryId = entryId;
+  $('#memoModalTitle').textContent = en.title;
+  $('#memoModalMeta').textContent = `${DAYS[en.day]}요일 · ${en.start}–${en.end} · 🔒 잠긴 일정 — 자물쇠 아이콘을 누르면 잠금을 해제하고 시간을 옮길 수 있어요`;
+  $('#fMemoOnly').value = en.memo || '';
+  showModal('memoModalBg');
+}
+$('#btnSaveMemoOnly').addEventListener('click', ()=>{
+  if(!editingMemoEntryId) return;
+  const en = state.entries.find(e=>e.id===editingMemoEntryId);
+  if(en){ en.memo = $('#fMemoOnly').value; queueSave(); renderEntries(); }
+  hideModal('memoModalBg');
+  toast('메모를 저장했어요');
 });
 
 /* ============ CATEGORY MODAL ============ */
