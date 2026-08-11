@@ -348,10 +348,11 @@ input[type=color]::-moz-color-swatch{ border:none; border-radius:50%; }
 .check-row input[type=checkbox]{ width:16px; height:16px; accent-color:var(--ink); cursor:pointer; }
 .check-row .muted{ color:var(--ink-faint); font-weight:500; font-size:11.5px; margin-left:auto; }
 
-@media (max-width:720px){
-  .grid-head, .grid-body{ grid-template-columns:44px repeat(7, 100px); }
-  .time-label, .hour-cell{ height:40px; }
-}
+/* Note: grid dimensions are intentionally fixed (not responsive) — entry/sticker/
+   now-line positions are computed in JS using these exact pixel constants
+   (TIME_W/DAY_W/HOUR_H). A responsive breakpoint here would desync the CSS
+   grid from that math, misaligning everything (and breaking image export).
+   Narrow viewports get horizontal scroll instead (see .board-wrap overflow-x). */
 </style>
 </head>
 <body>
@@ -373,9 +374,8 @@ input[type=color]::-moz-color-swatch{ border:none; border-radius:50%; }
       <label class="btn file-btn edit-only">스티커 업로드<input type="file" id="stickerInput" accept="image/*" multiple></label>
       <button class="btn edit-only" id="btnPresetSticker">기본 스티커</button>
       <div class="spacer"></div>
-      <button class="btn edit-only" id="btnShare">공유하기</button>
-      <input class="code-input" id="loadCode" placeholder="공유코드" maxlength="8">
-      <button class="btn" id="btnLoadCode">불러오기</button>
+      <button class="btn edit-only" id="btnShare">공유 파일 내보내기</button>
+      <label class="btn file-btn">친구 파일 불러오기<input type="file" id="friendFileInput" accept="application/json,.json"></label>
       <div class="divider-v"></div>
       <button class="btn" id="btnExportOrig">원본 저장</button>
       <button class="btn" id="btnExportWall">배경화면 저장</button>
@@ -410,7 +410,7 @@ input[type=color]::-moz-color-swatch{ border:none; border-radius:50%; }
       </div>
     </div>
 
-    <div class="note">일정은 기본적으로 🔒 잠겨 있어 클릭하면 메모만 남길 수 있어요. 자물쇠를 눌러 잠금 해제하면 드래그로 시간을 옮기거나 전체 수정을 할 수 있습니다. 스티커는 화면 어디에든 배치할 수 있고, 이미지를 복사해 Ctrl+V로 붙여넣거나 스티커를 선택 후 Ctrl+C/V로 복제할 수 있어요. 오른쪽 인덱스에서 친구의 시간표도 구경할 수 있어요.</div>
+    <div class="note">일정은 기본적으로 🔒 잠겨 있어 클릭하면 메모만 남길 수 있어요. 자물쇠를 눌러 잠금 해제하면 드래그로 시간을 옮기거나 전체 수정을 할 수 있고, 수정 창의 "복제" 버튼이나 Ctrl+C/V로 반복 일정을 손쉽게 복사할 수 있어요. 스티커는 화면 어디에든 자유롭게 배치할 수 있고, 이미지를 복사해 Ctrl+V로 붙여넣거나 스티커를 선택 후 Ctrl+C/V·복제 버튼으로 늘릴 수 있어요. 오른쪽 인덱스에서 친구의 시간표도 구경할 수 있어요.</div>
   </div>
   <div id="stickerLayer"></div>
 </div>
@@ -452,6 +452,16 @@ input[type=color]::-moz-color-swatch{ border:none; border-radius:50%; }
       <div class="field"><label>종료</label><input type="time" id="fEnd" value="10:00"></div>
     </div>
     <div class="field">
+      <label>길이 빠른 설정</label>
+      <div class="cat-pick" id="durPick">
+        <div class="opt" data-min="30">30분</div>
+        <div class="opt" data-min="60">1시간</div>
+        <div class="opt" data-min="90">1시간30분</div>
+        <div class="opt" data-min="120">2시간</div>
+        <div class="opt" data-min="180">3시간</div>
+      </div>
+    </div>
+    <div class="field">
       <label>카테고리</label>
       <div class="cat-pick" id="catPick"></div>
     </div>
@@ -461,6 +471,7 @@ input[type=color]::-moz-color-swatch{ border:none; border-radius:50%; }
     </div>
     <div class="modal-actions">
       <button class="btn small ghost" id="btnDeleteEntry" style="display:none;">삭제</button>
+      <button class="btn small" id="btnDuplicateEntry" style="display:none;">복제</button>
       <button class="btn small" data-close="entryModalBg">취소</button>
       <button class="btn small primary" id="btnSaveEntry">저장</button>
     </div>
@@ -500,12 +511,10 @@ input[type=color]::-moz-color-swatch{ border:none; border-radius:50%; }
 <div class="overlay-bg" id="shareModalBg">
   <div class="modal">
     <button class="close-x" data-close="shareModalBg">✕</button>
-    <h3>친구와 공유하기</h3>
-    <div class="hint">아래 코드를 친구에게 보내주세요. 친구가 코드를 입력하면 지금 시간표를 그대로 볼 수 있어요.</div>
-    <div class="share-code" id="shareCodeDisplay">------</div>
+    <h3>파일이 다운로드됐어요 📥</h3>
+    <div class="hint">다운로드 폴더에 저장된 .json 파일을 카카오톡·메일 등으로 친구에게 보내주세요. 친구가 "친구 파일 불러오기"로 그 파일을 선택하면 자신의 인덱스에 내 시간표가 탭으로 추가돼요 (읽기 전용으로 볼 수 있어요).</div>
     <div class="modal-actions" style="justify-content:center;">
-      <button class="btn small" id="btnCopyCode">코드 복사</button>
-      <button class="btn small" data-close="shareModalBg">닫기</button>
+      <button class="btn small primary" data-close="shareModalBg">확인</button>
     </div>
   </div>
 </div>
@@ -571,6 +580,24 @@ input[type=color]::-moz-color-swatch{ border:none; border-radius:50%; }
 <div class="toast" id="toast"></div>
 
 <script>
+/* ============ STORAGE ============
+   Runs standalone (e.g. on GitHub Pages) using the browser's own localStorage,
+   so data persists on that visitor's device even after closing the tab —
+   no server and no Claude-specific APIs required. Each visitor's browser
+   keeps its own independent copy. */
+const storage = {
+  async get(key){
+    try{
+      const v = localStorage.getItem(key);
+      return v === null ? null : { value: v };
+    }catch(e){ return null; }
+  },
+  async set(key, value){
+    try{ localStorage.setItem(key, value); return { value }; }
+    catch(e){ return null; }
+  },
+};
+
 /* ============ THEMES ============ */
 const THEMES = {
   pink:      {name:'핑크',   bgA:'#FDEFF3', bgB:'#EFF3FD', bgC:'#F3FBF6', accent:'#FF8FAE', accentStrong:'#FF6F91', accentSoft:'#FFEAF0'},
@@ -677,24 +704,24 @@ function initDuoPicker(){
   $('#duoColor2').addEventListener('change', ()=>{ saveTheme(); saveDuoHex(); });
 }
 async function saveTheme(){
-  try{ await window.storage.set('dakku_theme_v2', currentTheme, false); }catch(e){}
+  try{ await storage.set('dakku_theme_v2', currentTheme); }catch(e){}
 }
 async function saveDuoHex(){
   try{
-    await window.storage.set('dakku_theme_duo1', duoHex1, false);
-    await window.storage.set('dakku_theme_duo2', duoHex2, false);
+    await storage.set('dakku_theme_duo1', duoHex1);
+    await storage.set('dakku_theme_duo2', duoHex2);
   }catch(e){}
 }
 async function loadTheme(){
   try{
-    const h1 = await window.storage.get('dakku_theme_duo1', false);
+    const h1 = await storage.get('dakku_theme_duo1');
     if(h1 && h1.value) duoHex1 = h1.value;
-    const h2 = await window.storage.get('dakku_theme_duo2', false);
+    const h2 = await storage.get('dakku_theme_duo2');
     if(h2 && h2.value) duoHex2 = h2.value;
   }catch(e){}
   THEMES.custom = buildCustomTheme(duoHex1, duoHex2);
   try{
-    const res = await window.storage.get('dakku_theme_v2', false);
+    const res = await storage.get('dakku_theme_v2');
     if(res && res.value && THEMES[res.value]) currentTheme = res.value;
   }catch(e){}
   initDuoPicker();
@@ -728,6 +755,8 @@ let editingEntryId = null;
 let saveTimer = null;
 let selectedStickerId = null;
 let copiedStickerBuffer = null;
+let selectedEntryId = null;
+let copiedEntryBuffer = null;
 let COVER_PX = COVER_H_CSS, HEAD_PX = 40;
 
 /* ---- multi-page (share-code index) state ----
@@ -759,13 +788,13 @@ function measureLayout(){
 
 /* ============ STORAGE ============ */
 async function saveLocal(){
-  try{ await window.storage.set('dakku_timetable_v4', JSON.stringify(myState), false); }
+  try{ await storage.set('dakku_timetable_v4', JSON.stringify(myState)); }
   catch(e){ console.error('save failed', e); }
 }
 function queueSave(){ if(isReadOnly) return; clearTimeout(saveTimer); saveTimer = setTimeout(saveLocal, 500); }
 async function loadLocal(){
   try{
-    const res = await window.storage.get('dakku_timetable_v4', false);
+    const res = await storage.get('dakku_timetable_v4');
     if(res && res.value){
       const parsed = JSON.parse(res.value);
       if(parsed && parsed.categories && parsed.entries) state = Object.assign({cover:null}, parsed);
@@ -1011,6 +1040,8 @@ function minToTime(m){
 function attachEntryInteraction(div, en, locked){
   div.addEventListener('mousedown', (e)=>{
     if(e.target.closest('.entry-lock')) return;
+    selectedEntryId = en.id;
+    selectedStickerId = null;
     if(locked){
       function up(){ document.removeEventListener('mouseup', up); openMemoModal(en.id); }
       document.addEventListener('mouseup', up);
@@ -1090,6 +1121,7 @@ function renderStickers(){
       el.addEventListener('mousedown', (e)=>{
         if(e.target.closest('.remove') || e.target.closest('.copy-btn') || e.target.closest('.resize-handle') || e.target.closest('.rotate-handle')) return;
         selectedStickerId = st.id;
+        selectedEntryId = null;
         updateStickerSelectionVisual();
         startDrag(e, st);
       });
@@ -1107,15 +1139,27 @@ function duplicateSticker(st){
   renderStickers(); queueSave();
   toast('스티커를 복제했어요');
 }
+function duplicateEntry(src){
+  // duplicates are created unlocked so the new copy can be dragged straight
+  // to the right slot without an extra unlock step.
+  const copy = Object.assign({}, src, { id: uid(), locked: false });
+  state.entries.push(copy);
+  selectedEntryId = copy.id;
+  selectedStickerId = null;
+  renderEntries(); queueSave();
+  toast('일정을 복제했어요 — 원하는 시간대로 끌어서 옮겨보세요');
+  return copy;
+}
 
 function startDrag(e, st){
   e.preventDefault();
-  const shellRect = $('.shell').getBoundingClientRect();
   const startX = e.clientX, startY = e.clientY;
   const origX = st.x, origY = st.y;
   function move(ev){
-    st.x = Math.max(0, Math.min(origX + (ev.clientX-startX), shellRect.width - st.w));
-    st.y = Math.max(0, Math.min(origY + (ev.clientY-startY), shellRect.height - st.h));
+    // no bounds clamping — stickers can be placed anywhere, including
+    // outside the app card's edges.
+    st.x = origX + (ev.clientX-startX);
+    st.y = origY + (ev.clientY-startY);
     const el = document.querySelector(`.sticker[data-id="${st.id}"]`);
     if(el){ el.style.left = st.x+'px'; el.style.top = st.y+'px'; }
   }
@@ -1171,31 +1215,65 @@ function boardOffsetInShell(){
   return { x: boardRect.left - shellRect.left, y: boardRect.top - shellRect.top };
 }
 
-/* deselect a sticker when clicking anywhere outside it */
+/* deselect a sticker/entry when clicking anywhere outside it */
 document.addEventListener('mousedown', (e)=>{
   if(selectedStickerId && !e.target.closest('.sticker')){
     selectedStickerId = null;
     updateStickerSelectionVisual();
   }
+  if(selectedEntryId && !e.target.closest('.entry')){
+    selectedEntryId = null;
+  }
 });
 
-/* copy/paste a selected sticker with the keyboard (Ctrl/Cmd+C, Ctrl/Cmd+V) */
+/* copy/paste a selected sticker OR entry with the keyboard (Ctrl/Cmd+C, Ctrl/Cmd+V) */
+let lastCopiedType = null; // 'entry' | 'sticker'
 document.addEventListener('keydown', (e)=>{
   if(isReadOnly) return;
   if($('.overlay-bg.show')) return; // don't hijack shortcuts while a modal/textarea is active
   const key = e.key.toLowerCase();
   const withMod = e.ctrlKey || e.metaKey;
   if(!withMod) return;
-  if(key === 'c' && selectedStickerId){
-    const st = state.stickers.find(s=>s.id===selectedStickerId);
-    if(st) copiedStickerBuffer = Object.assign({}, st);
-  } else if(key === 'v' && copiedStickerBuffer){
-    duplicateSticker(copiedStickerBuffer);
-    copiedStickerBuffer = Object.assign({}, copiedStickerBuffer, { x: copiedStickerBuffer.x+18, y: copiedStickerBuffer.y+18 });
+  if(key === 'c'){
+    if(selectedEntryId){
+      const en = state.entries.find(x=>x.id===selectedEntryId);
+      if(en){ copiedEntryBuffer = Object.assign({}, en); lastCopiedType = 'entry'; }
+    } else if(selectedStickerId){
+      const st = state.stickers.find(s=>s.id===selectedStickerId);
+      if(st){ copiedStickerBuffer = Object.assign({}, st); lastCopiedType = 'sticker'; }
+    }
+  } else if(key === 'v'){
+    if(lastCopiedType === 'entry' && copiedEntryBuffer){
+      const shifted = Object.assign({}, copiedEntryBuffer, { day:(copiedEntryBuffer.day+1)%7 });
+      duplicateEntry(shifted);
+      copiedEntryBuffer = shifted;
+    } else if(lastCopiedType === 'sticker' && copiedStickerBuffer){
+      duplicateSticker(copiedStickerBuffer);
+      copiedStickerBuffer = Object.assign({}, copiedStickerBuffer, { x: copiedStickerBuffer.x+18, y: copiedStickerBuffer.y+18 });
+    }
   }
 });
 
 /* paste an image straight from the OS clipboard as a new sticker */
+/* Load an image just to read its natural size, so new stickers can be sized
+   to match their real aspect ratio — this sidesteps html2canvas's unreliable
+   object-fit support, which otherwise squishes non-square stickers on export. */
+function loadNaturalSize(src){
+  return new Promise(res=>{
+    const img = new Image();
+    img.onload = ()=>res({w:img.naturalWidth||1, h:img.naturalHeight||1});
+    img.onerror = ()=>res({w:1, h:1});
+    img.src = src;
+  });
+}
+function fitStickerSize(naturalW, naturalH, maxDim){
+  if(!naturalW || !naturalH) return {w:maxDim, h:maxDim};
+  const ratio = naturalW/naturalH;
+  return ratio >= 1
+    ? {w:maxDim, h:Math.round(maxDim/ratio)}
+    : {w:Math.round(maxDim*ratio), h:maxDim};
+}
+
 document.addEventListener('paste', (e)=>{
   if(isReadOnly) return;
   if($('.overlay-bg.show')) return;
@@ -1208,12 +1286,14 @@ document.addEventListener('paste', (e)=>{
       if(!file) return;
       handled = true;
       const reader = new FileReader();
-      reader.onload = ()=>{
+      reader.onload = async ()=>{
+        const size = await loadNaturalSize(reader.result);
+        const {w, h} = fitStickerSize(size.w, size.h, 110);
         const off = boardOffsetInShell();
         const ns = {
           id: uid(), src: reader.result,
           x: off.x + 70 + Math.random()*200, y: off.y + 40 + Math.random()*80,
-          w: 100, h: 100, rot: Math.round(Math.random()*10-5),
+          w, h, rot: Math.round(Math.random()*10-5),
         };
         state.stickers.push(ns);
         selectedStickerId = ns.id;
@@ -1286,6 +1366,7 @@ function openEntryModal(entryId, prefill){
     entry = state.entries.find(e=>e.id===entryId);
     modalTitle.textContent = '일정 수정';
     $('#btnDeleteEntry').style.display = 'inline-flex';
+    $('#btnDuplicateEntry').style.display = 'inline-flex';
     $('#fTitle').value = entry.title;
     $('#fStart').value = entry.start;
     $('#fEnd').value = entry.end;
@@ -1295,6 +1376,7 @@ function openEntryModal(entryId, prefill){
   } else {
     modalTitle.textContent = '일정 추가';
     $('#btnDeleteEntry').style.display = 'none';
+    $('#btnDuplicateEntry').style.display = 'none';
     $('#fTitle').value = '';
     $('#fMemo').value = '';
     const day = prefill ? prefill.day : todayIdx();
@@ -1306,6 +1388,10 @@ function openEntryModal(entryId, prefill){
   }
   $$('#dayPick .opt').forEach(o=>o.addEventListener('click', ()=>selectDayOpt(Number(o.dataset.day))));
   $$('#catPick .opt').forEach(o=>o.addEventListener('click', ()=>selectCatOpt(o.dataset.cat)));
+  $$('#durPick .opt').forEach(o=>o.addEventListener('click', ()=>{
+    const startMin = timeToMin($('#fStart').value || '09:00');
+    $('#fEnd').value = minToTime(startMin + Number(o.dataset.min));
+  }));
   showModal('entryModalBg');
 }
 function selectDayOpt(day){ $$('#dayPick .opt').forEach(o=>o.classList.toggle('sel', Number(o.dataset.day)===day)); }
@@ -1329,6 +1415,13 @@ $('#btnSaveEntry').addEventListener('click', ()=>{
   }
   renderEntries(); queueSave(); hideModal('entryModalBg');
   toast('저장했어요');
+});
+$('#btnDuplicateEntry').addEventListener('click', ()=>{
+  if(!editingEntryId) return;
+  const src = state.entries.find(e=>e.id===editingEntryId);
+  if(!src) return;
+  duplicateEntry(Object.assign({}, src, { day:(src.day+1)%7 }));
+  hideModal('entryModalBg');
 });
 $('#btnDeleteEntry').addEventListener('click', ()=>{
   state.entries = state.entries.filter(e=>e.id!==editingEntryId);
@@ -1404,12 +1497,14 @@ $('#stickerInput').addEventListener('change', (e)=>{
   let idx = 0;
   files.forEach(file=>{
     const reader = new FileReader();
-    reader.onload = ()=>{
+    reader.onload = async ()=>{
+      const size = await loadNaturalSize(reader.result);
+      const {w, h} = fitStickerSize(size.w, size.h, 92);
       state.stickers.push({
         id: uid(), src: reader.result,
         x: off.x + 60 + idx*20 + Math.random()*40,
         y: off.y + 40 + idx*15 + Math.random()*40,
-        w: 84, h: 84, rot: 0,
+        w, h, rot: 0,
       });
       idx++;
       renderStickers(); queueSave();
@@ -1430,33 +1525,40 @@ $('#btnReset').addEventListener('click', ()=>{
 });
 
 /* ============ SHARE ============ */
-function genCode(){
-  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-  let c = '';
-  for(let i=0;i<6;i++) c += chars[Math.floor(Math.random()*chars.length)];
-  return c;
+/* ============ SHARE (file export/import — no server, works on GitHub Pages) ============ */
+function downloadJSON(filename, dataObj){
+  const blob = new Blob([JSON.stringify(dataObj)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url; link.download = filename;
+  link.click();
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
 }
-$('#btnShare').addEventListener('click', async ()=>{
+$('#btnShare').addEventListener('click', ()=>{
   if(isReadOnly) return;
-  const code = genCode();
-  try{
-    await window.storage.set('dakku_share_'+code, JSON.stringify(myState), true);
-    $('#shareCodeDisplay').textContent = code;
-    showModal('shareModalBg');
-  }catch(e){ toast('공유 코드 생성에 실패했어요'); }
+  const d = new Date();
+  const stamp = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+  downloadJSON(`시간표_${stamp}.json`, myState);
+  showModal('shareModalBg');
 });
-$('#btnCopyCode').addEventListener('click', ()=>{
-  const code = $('#shareCodeDisplay').textContent;
-  navigator.clipboard?.writeText(code).then(()=>toast('코드를 복사했어요'));
-});
-$('#btnLoadCode').addEventListener('click', async ()=>{
-  const code = $('#loadCode').value.trim().toUpperCase();
-  if(!code){ toast('코드를 입력해주세요'); return; }
-  $('#loadCode').value = '';
-  await addFriendPage(code);
+$('#friendFileInput').addEventListener('change', (e)=>{
+  const file = e.target.files[0];
+  e.target.value = '';
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{
+      const parsed = JSON.parse(reader.result);
+      if(!parsed || !parsed.categories || !parsed.entries){ toast('올바른 시간표 파일이 아니에요'); return; }
+      const suggested = file.name.replace(/\.json$/i,'').slice(0,12) || '친구';
+      const label = (window.prompt('이 시간표의 별명을 입력하세요', suggested) || suggested).slice(0,12);
+      addFriendPage(label, parsed);
+    }catch(err){ toast('파일을 읽는 데 실패했어요'); }
+  };
+  reader.readAsText(file);
 });
 
-/* ============ MULTI-PAGE INDEX (my board + friends' shared boards) ============ */
+/* ============ MULTI-PAGE INDEX (my board + imported friends' boards) ============ */
 function rerenderAll(){
   buildSkeleton();
   measureLayout();
@@ -1469,8 +1571,9 @@ function updateReadonlyUI(){
   $('#windowEl').classList.toggle('readonly', isReadOnly);
   const badge = $('#readonlyBadge');
   if(isReadOnly){
+    const page = friendPages.find(p=>p.id===currentPageId);
     badge.style.display = 'inline-flex';
-    badge.textContent = `${currentPageId} 코드 · 보기 전용`;
+    badge.textContent = `${page ? page.label : '친구'} · 보기 전용`;
   } else {
     badge.style.display = 'none';
   }
@@ -1485,56 +1588,37 @@ function switchToMe(){
   renderPageIndex();
   updateReadonlyUI();
 }
-async function switchToFriend(code){
-  currentPageId = code;
-  toast('불러오는 중...');
-  try{
-    const res = await window.storage.get('dakku_share_'+code, true);
-    if(res && res.value){
-      state = Object.assign({cover:null, categories:[], entries:[], stickers:[]}, JSON.parse(res.value));
-      isReadOnly = true;
-      hiddenCats = new Set();
-      rerenderAll();
-      toast('친구의 시간표를 불러왔어요');
-    } else {
-      toast('해당 시간표를 찾을 수 없어요');
-      currentPageId = 'me'; state = myState; isReadOnly = false; hiddenCats = new Set();
-      rerenderAll();
-    }
-  }catch(e){
-    toast('불러오기에 실패했어요');
-    currentPageId = 'me'; state = myState; isReadOnly = false; hiddenCats = new Set();
-    rerenderAll();
-  }
+function switchToFriend(id){
+  const page = friendPages.find(p=>p.id===id);
+  if(!page){ toast('찾을 수 없어요'); return; }
+  currentPageId = id;
+  state = Object.assign({cover:null, categories:[], entries:[], stickers:[]}, page.data);
+  isReadOnly = true;
+  hiddenCats = new Set();
+  rerenderAll();
   renderPageIndex();
   updateReadonlyUI();
 }
-async function addFriendPage(code){
-  const exists = friendPages.find(p=>p.code===code);
-  if(!exists){
-    toast('코드를 확인하는 중...');
-    try{
-      const res = await window.storage.get('dakku_share_'+code, true);
-      if(!res || !res.value){ toast('해당 코드를 찾을 수 없어요'); return; }
-    }catch(e){ toast('해당 코드를 찾을 수 없어요'); return; }
-    friendPages.push({ code, color: CAT_PALETTE[friendPages.length % CAT_PALETTE.length] });
-    saveFriendPages();
-  }
-  renderPageIndex();
-  await switchToFriend(code);
-}
-function removeFriendPage(code){
-  friendPages = friendPages.filter(p=>p.code!==code);
+function addFriendPage(label, data){
+  const id = uid();
+  friendPages.push({ id, label, color: CAT_PALETTE[friendPages.length % CAT_PALETTE.length], data });
   saveFriendPages();
-  if(currentPageId === code) switchToMe();
+  renderPageIndex();
+  switchToFriend(id);
+  toast(`'${label}'의 시간표를 추가했어요`);
+}
+function removeFriendPage(id){
+  friendPages = friendPages.filter(p=>p.id!==id);
+  saveFriendPages();
+  if(currentPageId === id) switchToMe();
   else renderPageIndex();
 }
 async function saveFriendPages(){
-  try{ await window.storage.set('dakku_friend_codes', JSON.stringify(friendPages), false); }catch(e){}
+  try{ await storage.set('dakku_friend_pages_v1', JSON.stringify(friendPages)); }catch(e){}
 }
 async function loadFriendPagesList(){
   try{
-    const res = await window.storage.get('dakku_friend_codes', false);
+    const res = await storage.get('dakku_friend_pages_v1');
     if(res && res.value){
       const parsed = JSON.parse(res.value);
       if(Array.isArray(parsed)) friendPages = parsed;
@@ -1545,9 +1629,9 @@ function renderPageIndex(){
   const el = $('#pageIndex');
   let html = `<div class="page-tab me-tab ${currentPageId==='me'?'active':''}" data-page="me">내 시간표</div>`;
   friendPages.forEach(p=>{
-    const active = currentPageId===p.code ? 'active' : '';
-    html += `<div class="page-tab ${active}" data-page="${p.code}" style="background:${dotColor(p.color)}">
-      ${p.code}<span class="tab-remove" data-remove="${p.code}">✕</span>
+    const active = currentPageId===p.id ? 'active' : '';
+    html += `<div class="page-tab ${active}" data-page="${p.id}" style="background:${dotColor(p.color)}">
+      ${p.label}<span class="tab-remove" data-remove="${p.id}">✕</span>
     </div>`;
   });
   el.innerHTML = html;
@@ -1569,26 +1653,37 @@ function renderPageIndex(){
 /* ============ EXPORT ============ */
 const EXPORT_SCALE = 2;
 async function captureStage(includeStickers){
-  const layer = $('#stickerLayer');
-  if(!includeStickers) layer.style.visibility = 'hidden';
-  const shellEl = $('.shell');
-  // capture the whole shell (titlebar/toolbar/legend/board + the free-floating
-  // sticker layer on top of it), then crop down to just the board's rect —
-  // this correctly composites any stickers that overlap the board while
-  // excluding the toolbar/legend/titlebar chrome.
-  const fullCanvas = await html2canvas(shellEl, {backgroundColor:null, scale:EXPORT_SCALE, useCORS:true});
-  if(!includeStickers) layer.style.visibility = 'visible';
-
-  const shellRect = shellEl.getBoundingClientRect();
-  const boardRect = $('#capture-area').getBoundingClientRect();
-  const cx = Math.round((boardRect.left - shellRect.left) * EXPORT_SCALE);
-  const cy = Math.round((boardRect.top - shellRect.top) * EXPORT_SCALE);
-  const cw = Math.round(boardRect.width * EXPORT_SCALE);
-  const ch = Math.round(boardRect.height * EXPORT_SCALE);
-  const out = document.createElement('canvas');
-  out.width = cw; out.height = ch;
-  out.getContext('2d').drawImage(fullCanvas, cx, cy, cw, ch, 0, 0, cw, ch);
-  return out;
+  const boardEl = $('#capture-area');
+  let tempHost = null;
+  if(includeStickers && state.stickers.length){
+    // Clone overlapping stickers as plain, correctly-sized <img> elements
+    // directly inside the board for the capture. html2canvas has known,
+    // unreliable support for `object-fit` — rendering through it can squish
+    // non-square images — so we sidestep that entirely by giving each cloned
+    // image the sticker's exact box (no object-fit needed).
+    const off = boardOffsetInShell();
+    tempHost = document.createElement('div');
+    tempHost.style.cssText = 'position:absolute; inset:0; pointer-events:none; z-index:50;';
+    state.stickers.forEach(st=>{
+      const img = document.createElement('img');
+      img.src = st.src;
+      img.style.cssText = `position:absolute; left:${st.x-off.x}px; top:${st.y-off.y}px; width:${st.w}px; height:${st.h}px; transform:rotate(${st.rot||0}deg); filter:drop-shadow(0 3px 5px rgba(0,0,0,0.18));`;
+      tempHost.appendChild(img);
+    });
+    boardEl.appendChild(tempHost);
+    // make sure every cloned image has actually finished loading before we rasterize
+    await Promise.all(Array.from(tempHost.querySelectorAll('img')).map(img =>
+      img.complete ? Promise.resolve() : new Promise(res=>{ img.onload=res; img.onerror=res; })
+    ));
+  }
+  try{ if(document.fonts && document.fonts.ready) await document.fonts.ready; }catch(e){}
+  let canvas;
+  try{
+    canvas = await html2canvas(boardEl, {backgroundColor:'#fffefd', scale:EXPORT_SCALE, useCORS:true, windowWidth:boardEl.scrollWidth});
+  } finally {
+    if(tempHost) tempHost.remove();
+  }
+  return canvas;
 }
 function cropBanner(canvas){
   const bannerPx = Math.round(COVER_PX * EXPORT_SCALE);
