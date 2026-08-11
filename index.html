@@ -214,6 +214,14 @@ input[type=color]::-moz-color-swatch{ border:none; border-radius:50%; }
 }
 .entry .entry-lock:hover{ opacity:1; background:rgba(255,255,255,0.6); }
 .entry .memo-dot{ position:absolute; bottom:2px; right:3px; font-size:9px; opacity:.7; line-height:1; }
+.entry .entry-resize{ position:absolute; left:0; right:0; height:7px; cursor:ns-resize; z-index:1; }
+.entry .entry-resize-top{ top:-2px; }
+.entry .entry-resize-bottom{ bottom:-2px; }
+.entry .entry-resize::after{
+  content:""; position:absolute; left:50%; top:50%; width:22px; height:3px; border-radius:2px;
+  background:rgba(20,20,30,0.28); transform:translate(-50%,-50%); opacity:0; transition:opacity .12s ease;
+}
+.entry.unlocked:hover .entry-resize::after{ opacity:1; }
 
 .nowline{ position:absolute; height:2px; background:var(--danger); pointer-events:none; z-index:5; border-radius:2px; }
 .nowline .dotmark{ position:absolute; left:-4px; top:-3px; width:8px; height:8px; border-radius:50%; background:var(--danger); box-shadow:0 0 0 3px rgba(229,72,77,0.22); }
@@ -410,7 +418,7 @@ input[type=color]::-moz-color-swatch{ border:none; border-radius:50%; }
       </div>
     </div>
 
-    <div class="note">일정은 기본적으로 🔒 잠겨 있어 클릭하면 메모만 남길 수 있어요. 자물쇠를 눌러 잠금 해제하면 드래그로 시간을 옮기거나 전체 수정을 할 수 있고, 수정 창의 "복제" 버튼이나 Ctrl+C/V로 반복 일정을 손쉽게 복사할 수 있어요. 스티커는 화면 어디에든 자유롭게 배치할 수 있고, 이미지를 복사해 Ctrl+V로 붙여넣거나 스티커를 선택 후 Ctrl+C/V·복제 버튼으로 늘릴 수 있어요. 오른쪽 인덱스에서 친구의 시간표도 구경할 수 있어요.</div>
+    <div class="note">일정은 기본적으로 🔒 잠겨 있어 클릭하면 메모만 남길 수 있어요. 자물쇠를 눌러 잠금 해제하면 드래그로 시간을 옮기거나 위아래 끝을 끌어 길이를 늘리고 줄일 수 있고, 수정 창의 "복제" 버튼이나 Ctrl+C/V로 반복 일정을 손쉽게 복사할 수 있어요. 스티커는 화면 어디에든 자유롭게 배치할 수 있고, 이미지를 복사해 Ctrl+V로 붙여넣거나 스티커를 선택 후 Ctrl+C/V·복제 버튼으로 늘릴 수 있어요. 오른쪽 인덱스에서 친구의 시간표도 구경할 수 있어요.</div>
   </div>
   <div id="stickerLayer"></div>
 </div>
@@ -1000,7 +1008,8 @@ function renderEntries(){
     if(isReadOnly) div.style.cursor = 'default';
     div.innerHTML = `<span class="t">${en.start}–${en.end}</span>${en.title}`
       + (en.memo ? `<span class="memo-dot" title="메모 있음">📝</span>` : '')
-      + (!isReadOnly ? `<span class="entry-lock" title="${locked?'잠금 — 눌러서 해제':'잠금 해제됨 — 눌러서 잠금'}">${locked?'🔒':'🔓'}</span>` : '');
+      + (!isReadOnly ? `<span class="entry-lock" title="${locked?'잠금 — 눌러서 해제':'잠금 해제됨 — 눌러서 잠금'}">${locked?'🔒':'🔓'}</span>` : '')
+      + (!isReadOnly && !locked ? `<div class="entry-resize entry-resize-top" title="시작 시간 조정"></div><div class="entry-resize entry-resize-bottom" title="종료 시간 조정"></div>` : '');
 
     if(!isReadOnly){
       const lockBtn = div.querySelector('.entry-lock');
@@ -1009,8 +1018,12 @@ function renderEntries(){
         e.stopPropagation();
         en.locked = !isLocked(en);
         renderEntries(); queueSave();
-        toast(isLocked(en) ? '일정을 잠갔어요' : '잠금을 해제했어요 — 드래그해서 시간을 옮길 수 있어요');
+        toast(isLocked(en) ? '일정을 잠갔어요' : '잠금을 해제했어요 — 드래그해서 시간을 옮기거나 위아래 끝을 끌어 길이를 조절할 수 있어요');
       });
+      if(!locked){
+        div.querySelector('.entry-resize-top').addEventListener('mousedown', (e)=>startEntryResizeTop(e, en, div));
+        div.querySelector('.entry-resize-bottom').addEventListener('mousedown', (e)=>startEntryResizeBottom(e, en, div));
+      }
       attachEntryInteraction(div, en, locked);
     }
     overlay.appendChild(div);
@@ -1039,7 +1052,7 @@ function minToTime(m){
 // (no meaningful movement) opens the full edit modal instead.
 function attachEntryInteraction(div, en, locked){
   div.addEventListener('mousedown', (e)=>{
-    if(e.target.closest('.entry-lock')) return;
+    if(e.target.closest('.entry-lock') || e.target.closest('.entry-resize')) return;
     selectedEntryId = en.id;
     selectedStickerId = null;
     if(locked){
@@ -1083,6 +1096,68 @@ function attachEntryInteraction(div, en, locked){
     document.addEventListener('mousemove', move);
     document.addEventListener('mouseup', up);
   });
+}
+
+const MIN_ENTRY_MIN = 15; // shortest an entry can be resized down to
+
+// Drag the TOP edge of an unlocked entry to move its start time (end stays fixed).
+function startEntryResizeTop(e, en, div){
+  e.preventDefault(); e.stopPropagation();
+  selectedEntryId = en.id; selectedStickerId = null;
+  const startY = e.clientY;
+  const origStartMin = timeToMin(en.start);
+  const endMin = timeToMin(en.end);
+  const origTop = parseFloat(div.style.top);
+  const origHeight = parseFloat(div.style.height);
+  let pendingStart = origStartMin;
+  function move(ev){
+    const dy = ev.clientY - startY;
+    const deltaMin = Math.round((dy / HOUR_H * 60) / 15) * 15;
+    pendingStart = Math.max(HOUR_START*60, Math.min(endMin - MIN_ENTRY_MIN, origStartMin + deltaMin));
+    const shift = (pendingStart - origStartMin) / 60 * HOUR_H;
+    div.style.top = (origTop + shift) + 'px';
+    div.style.height = Math.max(16, origHeight - shift) + 'px';
+  }
+  function up(){
+    document.removeEventListener('mousemove', move);
+    document.removeEventListener('mouseup', up);
+    if(pendingStart !== origStartMin){
+      en.start = minToTime(pendingStart);
+      renderEntries(); queueSave();
+      toast('시작 시간을 조정했어요');
+    }
+  }
+  document.addEventListener('mousemove', move);
+  document.addEventListener('mouseup', up);
+}
+
+// Drag the BOTTOM edge of an unlocked entry to move its end time (start stays fixed).
+function startEntryResizeBottom(e, en, div){
+  e.preventDefault(); e.stopPropagation();
+  selectedEntryId = en.id; selectedStickerId = null;
+  const startY = e.clientY;
+  const startMin = timeToMin(en.start);
+  const origEndMin = timeToMin(en.end);
+  const origHeight = parseFloat(div.style.height);
+  let pendingEnd = origEndMin;
+  function move(ev){
+    const dy = ev.clientY - startY;
+    const deltaMin = Math.round((dy / HOUR_H * 60) / 15) * 15;
+    pendingEnd = Math.max(startMin + MIN_ENTRY_MIN, Math.min(HOUR_END*60, origEndMin + deltaMin));
+    const shift = (pendingEnd - origEndMin) / 60 * HOUR_H;
+    div.style.height = Math.max(16, origHeight + shift) + 'px';
+  }
+  function up(){
+    document.removeEventListener('mousemove', move);
+    document.removeEventListener('mouseup', up);
+    if(pendingEnd !== origEndMin){
+      en.end = minToTime(pendingEnd);
+      renderEntries(); queueSave();
+      toast('종료 시간을 조정했어요');
+    }
+  }
+  document.addEventListener('mousemove', move);
+  document.addEventListener('mouseup', up);
 }
 
 /* ============ RENDER: STICKERS ============ */
