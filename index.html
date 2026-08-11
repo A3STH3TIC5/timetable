@@ -1651,16 +1651,20 @@ function renderPageIndex(){
 }
 
 /* ============ EXPORT ============ */
-const EXPORT_SCALE = 2;
+const EXPORT_SCALE = 3; // higher source resolution for sharper exports
+
+/* Tight capture of just the board itself (used for "원본 저장"): overlapping
+   stickers are cloned in as correctly-sized <img> elements (sidesteps
+   html2canvas's unreliable object-fit support), and the live now-line is
+   hidden since it's a live clock, not part of the saved artwork. */
 async function captureStage(includeStickers){
   const boardEl = $('#capture-area');
+  const nowlineEl = boardEl.querySelector('.nowline');
+  const prevNowlineDisplay = nowlineEl ? nowlineEl.style.display : null;
+  if(nowlineEl) nowlineEl.style.display = 'none';
+
   let tempHost = null;
   if(includeStickers && state.stickers.length){
-    // Clone overlapping stickers as plain, correctly-sized <img> elements
-    // directly inside the board for the capture. html2canvas has known,
-    // unreliable support for `object-fit` — rendering through it can squish
-    // non-square images — so we sidestep that entirely by giving each cloned
-    // image the sticker's exact box (no object-fit needed).
     const off = boardOffsetInShell();
     tempHost = document.createElement('div');
     tempHost.style.cssText = 'position:absolute; inset:0; pointer-events:none; z-index:50;';
@@ -1671,7 +1675,6 @@ async function captureStage(includeStickers){
       tempHost.appendChild(img);
     });
     boardEl.appendChild(tempHost);
-    // make sure every cloned image has actually finished loading before we rasterize
     await Promise.all(Array.from(tempHost.querySelectorAll('img')).map(img =>
       img.complete ? Promise.resolve() : new Promise(res=>{ img.onload=res; img.onerror=res; })
     ));
@@ -1682,6 +1685,7 @@ async function captureStage(includeStickers){
     canvas = await html2canvas(boardEl, {backgroundColor:'#fffefd', scale:EXPORT_SCALE, useCORS:true, windowWidth:boardEl.scrollWidth});
   } finally {
     if(tempHost) tempHost.remove();
+    if(nowlineEl) nowlineEl.style.display = prevNowlineDisplay;
   }
   return canvas;
 }
@@ -1692,6 +1696,97 @@ function cropBanner(canvas){
   out.width = canvas.width; out.height = canvas.height - bannerPx;
   out.getContext('2d').drawImage(canvas, 0, bannerPx, canvas.width, canvas.height-bannerPx, 0, 0, canvas.width, canvas.height-bannerPx);
   return out;
+}
+
+/* Wallpaper capture: unlike the tight board crop above, this builds a
+   bounding box that expands to include EVERY sticker's full extent — even
+   ones dragged out past the board's edges — so nothing gets clipped. The
+   board itself is cloned (transparent everywhere else) so that when this
+   gets composited onto the gradient background, any sticker hanging off
+   the board's edge floats naturally over the background, same as it looks
+   live in the app. */
+async function captureWallpaperRegion(includeStickers, includeCover){
+  const boardEl = $('#capture-area');
+  const off = boardOffsetInShell();
+  const boardW = boardEl.offsetWidth, boardH = boardEl.offsetHeight;
+  const contentTop = includeCover ? off.y : (off.y + COVER_PX);
+
+  let minX = off.x, minY = contentTop;
+  let maxX = off.x + boardW, maxY = off.y + boardH;
+  const stickers = includeStickers ? state.stickers : [];
+  stickers.forEach(st=>{
+    minX = Math.min(minX, st.x);
+    minY = Math.min(minY, st.y);
+    maxX = Math.max(maxX, st.x + st.w);
+    maxY = Math.max(maxY, st.y + st.h);
+  });
+  const totalW = Math.max(1, Math.ceil(maxX - minX));
+  const totalH = Math.max(1, Math.ceil(maxY - minY));
+
+  const host = document.createElement('div');
+  host.style.cssText = `position:fixed; left:-99999px; top:0; width:${totalW}px; height:${totalH}px; overflow:visible; background:transparent;`;
+  document.body.appendChild(host);
+
+  const boardClone = boardEl.cloneNode(true);
+  boardClone.removeAttribute('id');
+  boardClone.querySelectorAll('.nowline, .sticker').forEach(el=>el.remove());
+  if(!includeCover) boardClone.querySelector('.cover')?.remove();
+  boardClone.style.position = 'absolute';
+  boardClone.style.width = boardW + 'px';
+  boardClone.style.left = (off.x - minX) + 'px';
+  boardClone.style.top = (contentTop - minY) + 'px';
+  boardClone.style.background = '#fffefd';
+  boardClone.style.borderRadius = getComputedStyle(boardEl).borderRadius;
+  host.appendChild(boardClone);
+
+  if(includeStickers && stickers.length){
+    stickers.forEach(st=>{
+      const img = document.createElement('img');
+      img.src = st.src;
+      img.style.cssText = `position:absolute; left:${st.x-minX}px; top:${st.y-minY}px; width:${st.w}px; height:${st.h}px; transform:rotate(${st.rot||0}deg); filter:drop-shadow(0 3px 5px rgba(0,0,0,0.18));`;
+      host.appendChild(img);
+    });
+    await Promise.all(Array.from(host.querySelectorAll('img')).map(img =>
+      img.complete ? Promise.resolve() : new Promise(res=>{ img.onload=res; img.onerror=res; })
+    ));
+  }
+  try{ if(document.fonts && document.fonts.ready) await document.fonts.ready; }catch(e){}
+  let canvas;
+  try{
+    canvas = await html2canvas(host, {backgroundColor:null, scale:EXPORT_SCALE, useCORS:true});
+  } finally {
+    host.remove();
+  }
+  return canvas;
+}
+
+/* Paint a soft multi-blob gradient background matching the live app's
+   blurred pastel backdrop (.desktop), using the currently active theme. */
+function paintWallpaperBackground(ctx, W, H, t){
+  const base = ctx.createLinearGradient(0, 0, W, H);
+  base.addColorStop(0, t.bgA); base.addColorStop(0.5, t.bgB); base.addColorStop(1, t.bgC);
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, W, H);
+
+  const blobs = [
+    { x:0.14, y:0.18, color:t.accent },
+    { x:0.86, y:0.14, color:t.bgA },
+    { x:0.78, y:0.86, color:t.bgC },
+    { x:0.18, y:0.86, color:t.bgB },
+  ];
+  const radius = Math.max(W, H) * 0.55;
+  blobs.forEach(b=>{
+    const cx = W*b.x, cy = H*b.y;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+    grad.addColorStop(0, hexToRgba(b.color, 0.55));
+    grad.addColorStop(1, hexToRgba(b.color, 0));
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+  });
+}
+function hexToRgba(hex, a){
+  const [r,g,b] = hexToRgb(hex);
+  return `rgba(${r},${g},${b},${a})`;
 }
 
 async function exportImage(mode){
@@ -1713,23 +1808,25 @@ async function exportImage(mode){
   const includeStickers = $('#optIncludeStickers').checked;
   toast('이미지를 만들고 있어요...');
   try{
-    let stageCanvas = await captureStage(includeStickers);
-    if(!includeCover) stageCanvas = cropBanner(stageCanvas);
+    const stageCanvas = await captureWallpaperRegion(includeStickers, includeCover);
 
-    const W = 1920, H = 1080;
+    const W = 2560, H = 1440; // QHD output for a sharper wallpaper
     const wc = document.createElement('canvas');
     wc.width = W; wc.height = H;
     const ctx = wc.getContext('2d');
-    const t = THEMES[currentTheme];
-    const grad = ctx.createLinearGradient(0,0,W,H);
-    grad.addColorStop(0, t.bgA); grad.addColorStop(0.5, t.bgB); grad.addColorStop(1, t.bgC);
-    ctx.fillStyle = grad; ctx.fillRect(0,0,W,H);
-    const scale = Math.min((W-160)/stageCanvas.width, (H-160)/stageCanvas.height);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    paintWallpaperBackground(ctx, W, H, THEMES[currentTheme]);
+
+    const scale = Math.min((W-220)/stageCanvas.width, (H-220)/stageCanvas.height);
     const dw = stageCanvas.width*scale, dh = stageCanvas.height*scale;
     const dx = (W-dw)/2, dy = (H-dh)/2;
-    ctx.shadowColor = 'rgba(20,20,30,0.18)';
-    ctx.shadowBlur = 30;
+    ctx.save();
+    ctx.shadowColor = 'rgba(20,20,30,0.22)';
+    ctx.shadowBlur = 44;
+    ctx.shadowOffsetY = 10;
     ctx.drawImage(stageCanvas, dx, dy, dw, dh);
+    ctx.restore();
 
     const link = document.createElement('a');
     link.download = 'timetable-wallpaper.png';
