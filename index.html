@@ -1738,6 +1738,15 @@ async function captureStage(includeStickers){
   const prevNowlineDisplay = nowlineEl ? nowlineEl.style.display : null;
   if(nowlineEl) nowlineEl.style.display = 'none';
 
+  // hide lock icons and the "today" day highlight — these are live UI cues,
+  // not part of the saved artwork.
+  const lockEls = Array.from(boardEl.querySelectorAll('.entry-lock'));
+  lockEls.forEach(el=>{ el.dataset.prevDisplay = el.style.display; el.style.display = 'none'; });
+  const todayHeadEls = Array.from(boardEl.querySelectorAll('.head-cell.today'));
+  const todayColEls = Array.from(boardEl.querySelectorAll('.day-col.today-col'));
+  todayHeadEls.forEach(el=>el.classList.remove('today'));
+  todayColEls.forEach(el=>el.classList.remove('today-col'));
+
   let tempHost = null;
   if(includeStickers && state.stickers.length){
     const off = boardOffsetInShell();
@@ -1761,6 +1770,9 @@ async function captureStage(includeStickers){
   } finally {
     if(tempHost) tempHost.remove();
     if(nowlineEl) nowlineEl.style.display = prevNowlineDisplay;
+    lockEls.forEach(el=>{ el.style.display = el.dataset.prevDisplay || ''; delete el.dataset.prevDisplay; });
+    todayHeadEls.forEach(el=>el.classList.add('today'));
+    todayColEls.forEach(el=>el.classList.add('today-col'));
   }
   return canvas;
 }
@@ -1804,7 +1816,9 @@ async function captureWallpaperRegion(includeStickers, includeCover){
 
   const boardClone = boardEl.cloneNode(true);
   boardClone.removeAttribute('id');
-  boardClone.querySelectorAll('.nowline, .sticker').forEach(el=>el.remove());
+  boardClone.querySelectorAll('.nowline, .sticker, .entry-lock').forEach(el=>el.remove());
+  boardClone.querySelectorAll('.head-cell.today').forEach(el=>el.classList.remove('today'));
+  boardClone.querySelectorAll('.day-col.today-col').forEach(el=>el.classList.remove('today-col'));
   if(!includeCover) boardClone.querySelector('.cover')?.remove();
   boardClone.style.position = 'absolute';
   boardClone.style.width = boardW + 'px';
