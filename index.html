@@ -762,9 +762,8 @@ let hiddenCats = new Set();
 let editingEntryId = null;
 let saveTimer = null;
 let selectedStickerId = null;
-let copiedStickerBuffer = null;
 let selectedEntryId = null;
-let copiedEntryBuffer = null;
+let clipboard = null; // { type:'entry'|'sticker', data:{...} } — only one thing can ever be "copied" at a time
 let COVER_PX = COVER_H_CSS, HEAD_PX = 40;
 
 /* ---- multi-page (share-code index) state ----
@@ -1211,6 +1210,7 @@ function duplicateSticker(st){
   const copy = Object.assign({}, st, { id: uid(), x: st.x+18, y: st.y+18 });
   state.stickers.push(copy);
   selectedStickerId = copy.id;
+  selectedEntryId = null;
   renderStickers(); queueSave();
   toast('스티커를 복제했어요');
 }
@@ -1301,8 +1301,9 @@ document.addEventListener('mousedown', (e)=>{
   }
 });
 
-/* copy/paste a selected sticker OR entry with the keyboard (Ctrl/Cmd+C, Ctrl/Cmd+V) */
-let lastCopiedType = null; // 'entry' | 'sticker'
+/* copy/paste a selected sticker OR entry with the keyboard (Ctrl/Cmd+C, Ctrl/Cmd+V).
+   A single `clipboard` slot (not two parallel buffers) guarantees exactly one
+   of entry/sticker is ever "copied" at a time — pasting can't trigger both. */
 document.addEventListener('keydown', (e)=>{
   if(isReadOnly) return;
   if($('.overlay-bg.show')) return; // don't hijack shortcuts while a modal/textarea is active
@@ -1312,19 +1313,20 @@ document.addEventListener('keydown', (e)=>{
   if(key === 'c'){
     if(selectedEntryId){
       const en = state.entries.find(x=>x.id===selectedEntryId);
-      if(en){ copiedEntryBuffer = Object.assign({}, en); lastCopiedType = 'entry'; }
+      if(en) clipboard = { type:'entry', data: Object.assign({}, en) };
     } else if(selectedStickerId){
       const st = state.stickers.find(s=>s.id===selectedStickerId);
-      if(st){ copiedStickerBuffer = Object.assign({}, st); lastCopiedType = 'sticker'; }
+      if(st) clipboard = { type:'sticker', data: Object.assign({}, st) };
     }
   } else if(key === 'v'){
-    if(lastCopiedType === 'entry' && copiedEntryBuffer){
-      const shifted = Object.assign({}, copiedEntryBuffer, { day:(copiedEntryBuffer.day+1)%7 });
+    if(!clipboard) return;
+    if(clipboard.type === 'entry'){
+      const shifted = Object.assign({}, clipboard.data, { day:(clipboard.data.day+1)%7 });
       duplicateEntry(shifted);
-      copiedEntryBuffer = shifted;
-    } else if(lastCopiedType === 'sticker' && copiedStickerBuffer){
-      duplicateSticker(copiedStickerBuffer);
-      copiedStickerBuffer = Object.assign({}, copiedStickerBuffer, { x: copiedStickerBuffer.x+18, y: copiedStickerBuffer.y+18 });
+      clipboard = { type:'entry', data: shifted };
+    } else if(clipboard.type === 'sticker'){
+      duplicateSticker(clipboard.data);
+      clipboard = { type:'sticker', data: Object.assign({}, clipboard.data, { x: clipboard.data.x+18, y: clipboard.data.y+18 }) };
     }
   }
 });
@@ -1372,6 +1374,7 @@ document.addEventListener('paste', (e)=>{
         };
         state.stickers.push(ns);
         selectedStickerId = ns.id;
+        selectedEntryId = null;
         renderStickers(); queueSave();
         toast('클립보드 이미지를 스티커로 붙여넣었어요');
       };
