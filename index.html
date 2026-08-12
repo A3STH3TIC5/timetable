@@ -1304,6 +1304,7 @@ document.addEventListener('mousedown', (e)=>{
 /* copy/paste a selected sticker OR entry with the keyboard (Ctrl/Cmd+C, Ctrl/Cmd+V).
    A single `clipboard` slot (not two parallel buffers) guarantees exactly one
    of entry/sticker is ever "copied" at a time — pasting can't trigger both. */
+let suppressNextOSPaste = false;
 document.addEventListener('keydown', (e)=>{
   if(isReadOnly) return;
   if($('.overlay-bg.show')) return; // don't hijack shortcuts while a modal/textarea is active
@@ -1320,6 +1321,10 @@ document.addEventListener('keydown', (e)=>{
     }
   } else if(key === 'v'){
     if(!clipboard) return;
+    // We're handling this Ctrl+V ourselves — the browser's native 'paste'
+    // event fires right after this and would otherwise separately check the
+    // OS clipboard for an image and paste that in too. Skip that this once.
+    suppressNextOSPaste = true;
     if(clipboard.type === 'entry'){
       const shifted = Object.assign({}, clipboard.data, { day:(clipboard.data.day+1)%7 });
       duplicateEntry(shifted);
@@ -1354,6 +1359,7 @@ function fitStickerSize(naturalW, naturalH, maxDim){
 document.addEventListener('paste', (e)=>{
   if(isReadOnly) return;
   if($('.overlay-bg.show')) return;
+  if(suppressNextOSPaste){ suppressNextOSPaste = false; return; }
   const items = e.clipboardData && e.clipboardData.items;
   if(!items) return;
   let handled = false;
