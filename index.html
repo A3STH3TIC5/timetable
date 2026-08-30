@@ -66,7 +66,15 @@ body{
 }
 .win-dots{ display:flex; gap:6px; }
 .win-dots span{ width:8px; height:8px; border-radius:50%; background:rgba(27,27,31,0.2); }
-.win-title{ font-size:14px; font-weight:700; color:var(--ink); margin-right:auto; letter-spacing:-0.01em; }
+.win-title{
+  font-size:14px; font-weight:700; color:var(--ink); margin-right:auto; letter-spacing:-0.01em;
+  cursor:text; border-radius:6px; padding:2px 6px; margin-left:-6px; outline:none;
+  max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.win-title:hover{ background:rgba(0,0,0,0.045); }
+.win-title:focus{ background:#fff; box-shadow:0 0 0 2px var(--accent); white-space:normal; }
+.win-title[contenteditable="false"]{ cursor:default; }
+.win-title[contenteditable="false"]:hover{ background:none; }
 .win-sub{ font-size:11.5px; color:var(--ink-faint); font-weight:600; }
 .readonly-badge{
   font-size:11px; font-weight:700; padding:4px 11px; border-radius:999px;
@@ -371,7 +379,7 @@ input[type=color]::-moz-color-swatch{ border:none; border-radius:50%; }
 
     <div class="win-titlebar section" style="border-top:none;">
       <div class="win-dots"><span></span><span></span><span></span></div>
-      <span class="win-title">주간 시간표</span>
+      <span class="win-title" id="winTitle" contenteditable="true" spellcheck="false">주간 시간표</span>
       <span class="win-sub" id="todayTag"></span>
       <span class="readonly-badge" id="readonlyBadge" style="display:none;"></span>
     </div>
@@ -418,7 +426,7 @@ input[type=color]::-moz-color-swatch{ border:none; border-radius:50%; }
       </div>
     </div>
 
-    <div class="note">일정은 기본적으로 🔒 잠겨 있어 클릭하면 메모만 남길 수 있어요. 자물쇠를 눌러 잠금 해제하면 드래그로 시간을 옮기거나 위아래 끝을 끌어 길이를 늘리고 줄일 수 있고, 수정 창의 "복제" 버튼이나 Ctrl+C/V로 반복 일정을 손쉽게 복사할 수 있어요. 스티커는 화면 어디에든 자유롭게 배치할 수 있고, 이미지를 복사해 Ctrl+V로 붙여넣거나 스티커를 선택 후 Ctrl+C/V·복제 버튼으로 늘릴 수 있어요. 오른쪽 인덱스에서 친구의 시간표도 구경할 수 있어요.</div>
+    <div class="note">상단의 "주간 시간표" 제목을 눌러 원하는 이름으로 바꿀 수 있어요. 일정은 기본적으로 🔒 잠겨 있어 클릭하면 메모만 남길 수 있어요. 자물쇠를 눌러 잠금 해제하면 드래그로 시간을 옮기거나 위아래 끝을 끌어 길이를 늘리고 줄일 수 있고, 수정 창의 "복제" 버튼이나 Ctrl+C/V로 반복 일정을 손쉽게 복사할 수 있어요. 스티커는 화면 어디에든 자유롭게 배치할 수 있고, 이미지를 복사해 Ctrl+V로 붙여넣거나 스티커를 선택 후 Ctrl+C/V·복제 버튼으로 늘릴 수 있어요. 오른쪽 인덱스에서 친구의 시간표도 구경할 수 있어요.</div>
   </div>
   <div id="stickerLayer"></div>
 </div>
@@ -747,6 +755,7 @@ const CAT_DOT = {'#FFD3DE':'#FF8FAE','#D3E6FB':'#5FAEE0','#FFE9C2':'#EFA83D','#D
 
 /* ============ STATE ============ */
 let state = {
+  title: '주간 시간표',
   cover: null,
   categories: [
     {id:'c1', name:'수업', color:'#FFD3DE'},
@@ -804,7 +813,7 @@ async function loadLocal(){
     const res = await storage.get('dakku_timetable_v4');
     if(res && res.value){
       const parsed = JSON.parse(res.value);
-      if(parsed && parsed.categories && parsed.entries) state = Object.assign({cover:null}, parsed);
+      if(parsed && parsed.categories && parsed.entries) state = Object.assign({cover:null, title:'주간 시간표'}, parsed);
     }
   }catch(e){ /* nothing saved yet */ }
 }
@@ -821,10 +830,24 @@ function renderCover(){
     cover.style.backgroundImage = 'none';
     $('#coverEmpty').style.display = 'flex';
   }
+  const winTitle = $('#winTitle');
+  if(document.activeElement !== winTitle) winTitle.textContent = state.title || '주간 시간표';
+  winTitle.contentEditable = isReadOnly ? 'false' : 'true';
   const dayNames = ['일','월','화','수','목','금','토'];
   const d = new Date();
   $('#todayTag').textContent = `${d.getMonth()+1}월 ${d.getDate()}일 ${dayNames[d.getDay()]}요일`;
 }
+$('#winTitle').addEventListener('blur', ()=>{
+  if(isReadOnly) return;
+  const val = $('#winTitle').textContent.trim();
+  state.title = val || '주간 시간표';
+  $('#winTitle').textContent = state.title;
+  queueSave();
+});
+$('#winTitle').addEventListener('keydown', (e)=>{
+  e.stopPropagation(); // don't let Ctrl+C/V here trigger sticker/entry clipboard shortcuts
+  if(e.key === 'Enter'){ e.preventDefault(); $('#winTitle').blur(); }
+});
 $('#cover').addEventListener('click', (e)=>{
   if(isReadOnly) return;
   if(e.target.closest('.sticker')) return;
@@ -1250,9 +1273,16 @@ function startResize(e, st){
   e.preventDefault(); e.stopPropagation();
   const startX = e.clientX, startY = e.clientY;
   const origW = st.w, origH = st.h;
+  const aspect = origW / origH;
   function move(ev){
-    st.w = Math.max(24, origW + (ev.clientX-startX));
-    st.h = Math.max(24, origH + (ev.clientY-startY));
+    const dx = ev.clientX - startX;
+    const dy = ev.clientY - startY;
+    // drive uniform scaling from whichever axis moved more, so the sticker's
+    // proportions can never get squished/stretched while resizing.
+    const delta = Math.abs(dx) >= Math.abs(dy) ? dx : dy * aspect;
+    const newW = Math.max(24, origW + delta);
+    st.w = newW;
+    st.h = newW / aspect;
     const el = document.querySelector(`.sticker[data-id="${st.id}"]`);
     if(el){ el.style.width = st.w+'px'; el.style.height = st.h+'px'; }
   }
@@ -1610,12 +1640,21 @@ $('#btnReset').addEventListener('click', ()=>{
 
 /* ============ SHARE ============ */
 /* ============ SHARE (file export/import — no server, works on GitHub Pages) ============ */
+/* Programmatically clicking an <a download> that was never attached to the
+   document can silently no-op in sandboxed iframe contexts (no error, the
+   download just never starts) — always attach, click, then remove. */
+function triggerDownload(href, filename){
+  const link = document.createElement('a');
+  link.href = href;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
 function downloadJSON(filename, dataObj){
   const blob = new Blob([JSON.stringify(dataObj)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url; link.download = filename;
-  link.click();
+  triggerDownload(url, filename);
   setTimeout(()=>URL.revokeObjectURL(url), 2000);
 }
 $('#btnShare').addEventListener('click', ()=>{
@@ -1676,7 +1715,7 @@ function switchToFriend(id){
   const page = friendPages.find(p=>p.id===id);
   if(!page){ toast('찾을 수 없어요'); return; }
   currentPageId = id;
-  state = Object.assign({cover:null, categories:[], entries:[], stickers:[]}, page.data);
+  state = Object.assign({cover:null, title:'주간 시간표', categories:[], entries:[], stickers:[]}, page.data);
   isReadOnly = true;
   hiddenCats = new Set();
   rerenderAll();
@@ -1801,27 +1840,71 @@ function cropBanner(canvas){
    gets composited onto the gradient background, any sticker hanging off
    the board's edge floats naturally over the background, same as it looks
    live in the app. */
+/* Captures titlebar + board (+ any overflowing stickers) together as ONE
+   real DOM layout, rasterized in a single html2canvas pass. Two separate
+   captures stacked together via canvas math kept producing tiny gaps/
+   misalignment from independent height measurements — building them as one
+   actual layout (titlebar's bottom flush against the board's top, by
+   construction) guarantees zero gap. */
 async function captureWallpaperRegion(includeStickers, includeCover){
   const boardEl = $('#capture-area');
   const off = boardOffsetInShell();
   const boardW = boardEl.offsetWidth, boardH = boardEl.offsetHeight;
   const contentTop = includeCover ? off.y : (off.y + COVER_PX);
 
-  let minX = off.x, minY = contentTop;
+  let minX = off.x, minStickerY = contentTop;
   let maxX = off.x + boardW, maxY = off.y + boardH;
   const stickers = includeStickers ? state.stickers : [];
   stickers.forEach(st=>{
     minX = Math.min(minX, st.x);
-    minY = Math.min(minY, st.y);
+    minStickerY = Math.min(minStickerY, st.y);
     maxX = Math.max(maxX, st.x + st.w);
     maxY = Math.max(maxY, st.y + st.h);
   });
   const totalW = Math.max(1, Math.ceil(maxX - minX));
-  const totalH = Math.max(1, Math.ceil(maxY - minY));
+  const sceneH = Math.max(1, Math.ceil(maxY - contentTop)); // board's own height + anything hanging below it
+  const cardRadius = getComputedStyle(boardEl).borderRadius;
 
   const host = document.createElement('div');
-  host.style.cssText = `position:fixed; left:-99999px; top:0; width:${totalW}px; height:${totalH}px; overflow:visible; background:transparent;`;
+  // Note: position:absolute here, not fixed — html2canvas has documented
+  // reliability issues establishing a proper positioning context for
+  // position:absolute children inside a position:fixed ancestor.
+  host.style.cssText = `position:absolute; left:-99999px; top:0; width:${totalW}px; overflow:visible; background:transparent;`;
   document.body.appendChild(host);
+
+  // Build the titlebar card, append it alone first so we can measure its
+  // real rendered height, then position everything using that exact value.
+  const titlebar = document.createElement('div');
+  titlebar.style.cssText = `box-sizing:border-box; display:flex; align-items:center; gap:12px; width:${boardW}px; padding:18px 22px; background:rgba(255,255,255,0.95); border-radius:${cardRadius} ${cardRadius} 0 0; font-family:'Pretendard','Noto Sans KR',-apple-system,sans-serif;`;
+  const dots = document.createElement('div');
+  dots.style.cssText = 'display:flex; gap:6px; flex-shrink:0;';
+  for(let i=0; i<3; i++){
+    const d = document.createElement('span');
+    d.style.cssText = 'width:8px; height:8px; border-radius:50%; background:rgba(27,27,31,0.2); display:block;';
+    dots.appendChild(d);
+  }
+  const titleEl = document.createElement('span');
+  titleEl.textContent = (state.title || '주간 시간표').trim() || '주간 시간표';
+  titleEl.style.cssText = 'font-size:15px; font-weight:700; color:#1B1B1F; letter-spacing:-0.01em; margin-right:auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.4;';
+  const dateEl = document.createElement('span');
+  dateEl.textContent = $('#todayTag').textContent;
+  dateEl.style.cssText = 'font-size:12px; color:#9494A0; font-weight:600; white-space:nowrap; flex-shrink:0; line-height:1.4;';
+  titlebar.appendChild(dots); titlebar.appendChild(titleEl); titlebar.appendChild(dateEl);
+
+  host.appendChild(titlebar);
+  const titlebarH = titlebar.offsetHeight;
+
+  // The board must sit EXACTLY titlebarH below the titlebar, always — zero
+  // gap, unconditionally. If a sticker overhangs above the board's own top
+  // edge (contentTop), that overhang goes into extra space reserved ABOVE
+  // the titlebar instead — it must never push the board away from it.
+  const naiveStickerTop = titlebarH + (minStickerY - contentTop);
+  const extraTop = Math.max(0, -naiveStickerTop);
+
+  host.style.height = (extraTop + titlebarH + sceneH) + 'px';
+  titlebar.style.position = 'absolute';
+  titlebar.style.left = (off.x - minX) + 'px';
+  titlebar.style.top = extraTop + 'px';
 
   const boardClone = boardEl.cloneNode(true);
   boardClone.removeAttribute('id');
@@ -1832,16 +1915,20 @@ async function captureWallpaperRegion(includeStickers, includeCover){
   boardClone.style.position = 'absolute';
   boardClone.style.width = boardW + 'px';
   boardClone.style.left = (off.x - minX) + 'px';
-  boardClone.style.top = (contentTop - minY) + 'px';
+  boardClone.style.top = (extraTop + titlebarH) + 'px'; // always exactly titlebarH below the titlebar
   boardClone.style.background = '#fffefd';
-  boardClone.style.borderRadius = getComputedStyle(boardEl).borderRadius;
+  // top corners square (titlebar sits flush on top with rounded-top-only
+  // corners), bottom corners keep the board's own rounding — together they
+  // read as one continuous card.
+  boardClone.style.borderRadius = `0 0 ${cardRadius} ${cardRadius}`;
   host.appendChild(boardClone);
 
   if(includeStickers && stickers.length){
     stickers.forEach(st=>{
       const img = document.createElement('img');
       img.src = st.src;
-      img.style.cssText = `position:absolute; left:${st.x-minX}px; top:${st.y-minY}px; width:${st.w}px; height:${st.h}px; transform:rotate(${st.rot||0}deg); filter:drop-shadow(0 3px 5px rgba(0,0,0,0.18));`;
+      const stickerTop = extraTop + titlebarH + (st.y - contentTop);
+      img.style.cssText = `position:absolute; left:${st.x-minX}px; top:${stickerTop}px; width:${st.w}px; height:${st.h}px; transform:rotate(${st.rot||0}deg); filter:drop-shadow(0 3px 5px rgba(0,0,0,0.18));`;
       host.appendChild(img);
     });
     await Promise.all(Array.from(host.querySelectorAll('img')).map(img =>
@@ -1893,10 +1980,7 @@ async function exportImage(mode){
     try{
       let canvas = await captureStage(true);
       canvas = cropBanner(canvas);
-      const link = document.createElement('a');
-      link.download = 'timetable.png';
-      link.href = canvas.toDataURL('image/png');
-      link.click();
+      triggerDownload(canvas.toDataURL('image/png'), 'timetable.png');
       toast('저장 완료');
     }catch(e){ console.error(e); toast('이미지 저장에 실패했어요'); }
     return;
@@ -1926,10 +2010,7 @@ async function exportImage(mode){
     ctx.drawImage(stageCanvas, dx, dy, dw, dh);
     ctx.restore();
 
-    const link = document.createElement('a');
-    link.download = 'timetable-wallpaper.png';
-    link.href = wc.toDataURL('image/png');
-    link.click();
+    triggerDownload(wc.toDataURL('image/png'), 'timetable-wallpaper.png');
     toast('저장 완료');
   }catch(e){
     console.error(e);
