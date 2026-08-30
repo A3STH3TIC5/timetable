@@ -611,7 +611,7 @@ const storage = {
   },
   async set(key, value){
     try{ localStorage.setItem(key, value); return { value }; }
-    catch(e){ return null; }
+    catch(e){ console.error('storage.set failed for key', key, e); return null; }
   },
 };
 
@@ -804,16 +804,25 @@ function measureLayout(){
 }
 
 /* ============ STORAGE ============ */
+let saveFailWarned = false;
 async function saveLocal(){
-  try{ await storage.set('dakku_timetable_v4', JSON.stringify(myState)); }
-  catch(e){ console.error('save failed', e); }
+  const res = await storage.set('dakku_timetable_v4', JSON.stringify(myState));
+  if(!res){
+    if(!saveFailWarned){
+      saveFailWarned = true;
+      toast('저장 공간이 가득 찼어요 — 스티커나 표지 이미지를 줄이거나 삭제해보세요');
+    }
+    return false;
+  }
+  saveFailWarned = false;
+  return true;
 }
 function queueSave(){ if(isReadOnly) return; clearTimeout(saveTimer); saveTimer = setTimeout(saveLocal, 500); }
 $('#btnManualSave').addEventListener('click', async ()=>{
   if(isReadOnly) return;
   clearTimeout(saveTimer);
-  await saveLocal();
-  toast('저장했어요');
+  const ok = await saveLocal();
+  if(ok) toast('저장했어요');
 });
 async function loadLocal(){
   try{
@@ -1392,6 +1401,27 @@ function fitStickerSize(naturalW, naturalH, maxDim){
     ? {w:maxDim, h:Math.round(maxDim/ratio)}
     : {w:Math.round(maxDim*ratio), h:maxDim};
 }
+/* Stickers only ever display at ~100px on screen, but an uploaded photo can
+   be several megapixels — storing it at full resolution as base64 in
+   localStorage quickly blows past the ~5-10MB quota, causing saves to fail
+   silently (and stickers to vanish on reload). Downscale before storing. */
+function compressStickerImage(dataUrl, naturalW, naturalH, maxDim){
+  return new Promise(resolve=>{
+    if(Math.max(naturalW, naturalH) <= maxDim){ resolve(dataUrl); return; }
+    const img = new Image();
+    img.onload = ()=>{
+      const scale = maxDim / Math.max(naturalW, naturalH);
+      const w = Math.max(1, Math.round(naturalW*scale));
+      const h = Math.max(1, Math.round(naturalH*scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = ()=>resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
 
 document.addEventListener('paste', (e)=>{
   if(isReadOnly) return;
@@ -1408,10 +1438,11 @@ document.addEventListener('paste', (e)=>{
       const reader = new FileReader();
       reader.onload = async ()=>{
         const size = await loadNaturalSize(reader.result);
+        const compressed = await compressStickerImage(reader.result, size.w, size.h, 400);
         const {w, h} = fitStickerSize(size.w, size.h, 110);
         const off = boardOffsetInShell();
         const ns = {
-          id: uid(), src: reader.result,
+          id: uid(), src: compressed,
           x: off.x + 70 + Math.random()*200, y: off.y + 40 + Math.random()*80,
           w, h, rot: Math.round(Math.random()*10-5),
         };
@@ -1620,9 +1651,10 @@ $('#stickerInput').addEventListener('change', (e)=>{
     const reader = new FileReader();
     reader.onload = async ()=>{
       const size = await loadNaturalSize(reader.result);
+      const compressed = await compressStickerImage(reader.result, size.w, size.h, 400);
       const {w, h} = fitStickerSize(size.w, size.h, 92);
       state.stickers.push({
-        id: uid(), src: reader.result,
+        id: uid(), src: compressed,
         x: off.x + 60 + idx*20 + Math.random()*40,
         y: off.y + 40 + idx*15 + Math.random()*40,
         w, h, rot: 0,
