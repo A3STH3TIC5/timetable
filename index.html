@@ -386,6 +386,7 @@ input[type=color]::-moz-color-swatch{ border:none; border-radius:50%; }
 
     <div class="win-toolbar section">
       <button class="btn primary edit-only" id="btnAddEntry">＋ 일정 추가</button>
+      <button class="btn edit-only" id="btnManualSave" title="지금 바로 저장">💾 저장</button>
       <button class="btn edit-only" id="btnCategory">카테고리 관리</button>
       <label class="btn file-btn edit-only">스티커 업로드<input type="file" id="stickerInput" accept="image/*" multiple></label>
       <button class="btn edit-only" id="btnPresetSticker">기본 스티커</button>
@@ -808,6 +809,12 @@ async function saveLocal(){
   catch(e){ console.error('save failed', e); }
 }
 function queueSave(){ if(isReadOnly) return; clearTimeout(saveTimer); saveTimer = setTimeout(saveLocal, 500); }
+$('#btnManualSave').addEventListener('click', async ()=>{
+  if(isReadOnly) return;
+  clearTimeout(saveTimer);
+  await saveLocal();
+  toast('저장했어요');
+});
 async function loadLocal(){
   try{
     const res = await storage.get('dakku_timetable_v4');
