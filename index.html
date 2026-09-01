@@ -806,16 +806,25 @@ function measureLayout(){
 /* ============ STORAGE ============ */
 let saveFailWarned = false;
 async function saveLocal(){
-  const res = await storage.set('dakku_timetable_v4', JSON.stringify(myState));
-  if(!res){
+  try{
+    const res = await storage.set('dakku_timetable_v4', JSON.stringify(myState));
+    if(!res){
+      if(!saveFailWarned){
+        saveFailWarned = true;
+        toast('저장 공간이 가득 찼어요 — 스티커나 표지 이미지를 줄이거나 삭제해보세요');
+      }
+      return false;
+    }
+    saveFailWarned = false;
+    return true;
+  }catch(e){
+    console.error('saveLocal failed', e);
     if(!saveFailWarned){
       saveFailWarned = true;
-      toast('저장 공간이 가득 찼어요 — 스티커나 표지 이미지를 줄이거나 삭제해보세요');
+      toast('저장에 실패했어요: ' + (e && e.message ? e.message : '알 수 없는 오류'));
     }
     return false;
   }
-  saveFailWarned = false;
-  return true;
 }
 function queueSave(){ if(isReadOnly) return; clearTimeout(saveTimer); saveTimer = setTimeout(saveLocal, 500); }
 $('#btnManualSave').addEventListener('click', async ()=>{
@@ -1421,6 +1430,28 @@ function compressStickerImage(dataUrl, naturalW, naturalH, maxDim){
     img.onerror = ()=>resolve(dataUrl);
     img.src = dataUrl;
   });
+}
+/* One-time cleanup: stickers added before compression existed (or ones still
+   sitting in memory from a session where every save was silently failing)
+   may still be full-resolution — shrink any that are, then persist. Without
+   this, saves would keep failing indefinitely even after the upload/paste
+   paths were fixed, since the oversized data was already in memory/state. */
+async function compressExistingStickers(){
+  if(!myState.stickers || !myState.stickers.length) return;
+  let changed = false;
+  for(const st of myState.stickers){
+    try{
+      const size = await loadNaturalSize(st.src);
+      if(Math.max(size.w, size.h) > 400){
+        st.src = await compressStickerImage(st.src, size.w, size.h, 400);
+        changed = true;
+      }
+    }catch(e){ /* skip if this sticker's image data is unreadable */ }
+  }
+  if(changed){
+    renderStickers();
+    await saveLocal();
+  }
 }
 
 document.addEventListener('paste', (e)=>{
@@ -2074,6 +2105,7 @@ async function init(){
   await loadTheme();
   await loadLocal();
   myState = state;
+  await compressExistingStickers();
   await loadFriendPagesList();
   buildSkeleton();
   renderCover();
